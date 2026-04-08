@@ -195,6 +195,29 @@ export async function createBoardPost(payload) {
   if (error) throw error;
   return data;
 }
+export async function updateBoardPost(id, payload) {
+  const { data, error } = await supabase.from('board_posts').update(payload).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteBoardPost(id) {
+  const { error } = await supabase.from('board_posts').delete().eq('id', id);
+  if (error) throw error;
+}
+export async function getBoardComments(postId) {
+  const { data, error } = await supabase.from('board_comments').select('*').eq('post_id', postId).order('created_at');
+  if (error) throw error;
+  return data;
+}
+export async function addBoardComment(payload) {
+  const { data, error } = await supabase.from('board_comments').insert(payload).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteBoardComment(id) {
+  const { error } = await supabase.from('board_comments').delete().eq('id', id);
+  if (error) throw error;
+}
 
 // ==================== 대시보드 ====================
 export async function getRecentActivity() {
