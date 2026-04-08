@@ -26,7 +26,7 @@ export default function StudentInfoPage() {
     try {
       const d = await getStudent(id);
       setDetail(d);
-      setForm({ name: d.name, grade: d.grade??'', school_name: d.school_name??'', phone: d.phone??'', teacher_id: d.teacher_id??'', status: d.status });
+      setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', teacher_id: d.teacher_id??'', status: d.status });
     } catch { showToast('학생 정보 로드 실패', 'error'); }
   }
 
@@ -69,7 +69,6 @@ export default function StudentInfoPage() {
           <div style={{ display:'grid', gap:14, marginTop:16 }}>
             {[
               { label:'이름',   key:'name',        type:'text' },
-              { label:'학년',   key:'grade',       type:'text' },
               { label:'학교',   key:'school_name', type:'text' },
               { label:'연락처', key:'phone',       type:'text' },
             ].map(({ label, key, type }) => (
@@ -82,6 +81,26 @@ export default function StudentInfoPage() {
                 }
               </div>
             ))}
+            <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+              <span style={{ width:60, fontSize:13, fontWeight:600, color:'#64748b', flexShrink:0 }}>학년</span>
+              {editing
+                ? <select value={form.grade ?? ''} onChange={e => setForm(f => ({...f, grade: e.target.value}))}
+                    style={{ flex:1, padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14 }}>
+                    <option value="">선택</option>
+                    {['중1','중2','중3','고1','고2','고3'].map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                : <span style={{ flex:1, fontSize:14 }}>{detail.grade ?? '-'}</span>
+              }
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:16 }}>
+              <span style={{ width:60, fontSize:13, fontWeight:600, color:'#64748b', flexShrink:0 }}>반</span>
+              {editing
+                ? <input type="text" value={form.class_name ?? ''} onChange={e => setForm(f => ({...f, class_name: e.target.value}))}
+                    placeholder="예: 수학 심화반"
+                    style={{ flex:1, padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14 }} />
+                : <span style={{ flex:1, fontSize:14 }}>{detail.class_name ?? '-'}</span>
+              }
+            </div>
             <div style={{ display:'flex', alignItems:'center', gap:16 }}>
               <span style={{ width:60, fontSize:13, fontWeight:600, color:'#64748b', flexShrink:0 }}>담당강사</span>
               {editing

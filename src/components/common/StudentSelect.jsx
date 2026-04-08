@@ -155,7 +155,7 @@ export default function StudentSelect({ students = [], value, onChange }) {
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{s.name}</div>
                         <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
-                          {[s.grade, s.school_name].filter(Boolean).join(' · ') || '정보 없음'}
+                          {[s.grade, s.class_name, s.school_name].filter(Boolean).join(' · ') || '정보 없음'}
                         </div>
                       </div>
                     </div>
