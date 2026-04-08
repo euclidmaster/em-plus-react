@@ -3,6 +3,7 @@ import { getStudents, getAttendances, createAttendance, getComments, addComment,
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import StudentSelect from '../components/common/StudentSelect.jsx';
 
 export default function AttendancePage() {
   const [students, setStudents]       = useState([]);
@@ -73,10 +74,7 @@ export default function AttendancePage() {
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <label style={{ fontSize:13, fontWeight:600, color:'#64748b' }}>학생</label>
-          <select value={selectedId ?? ''} onChange={e => { setSelectedId(e.target.value); loadAtt(e.target.value); }}
-            style={{ padding:'8px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}>
-            {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <StudentSelect students={students} value={selectedId} onChange={id => { setSelectedId(id); loadAtt(id); }} />
         </div>
         <button className="btn-primary" onClick={() => setShowModal(true)}>
           <i className="fas fa-plus"></i> 출석 입력

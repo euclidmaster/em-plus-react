@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getStudents, getGradeStats, getHomeworks } from '../lib/api.js';
-import { useToast } from '../components/common/Toast.jsx';
-import { Bar, Line } from 'react-chartjs-2';
+import StudentSelect from '../components/common/StudentSelect.jsx';
+import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
@@ -11,7 +11,6 @@ export default function ReportPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [gradeData, setGradeData]   = useState([]);
   const [hwData, setHwData]         = useState([]);
-  const showToast = useToast();
 
   useEffect(() => {
     getStudents().then(s => { setStudents(s); if (s.length) { setSelectedId(s[0].id); } }).catch(console.error);
@@ -56,10 +55,7 @@ export default function ReportPage() {
 
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
         <label style={{ fontSize:13, fontWeight:600, color:'#64748b' }}>학생</label>
-        <select value={selectedId ?? ''} onChange={e => setSelectedId(e.target.value)}
-          style={{ padding:'8px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}>
-          {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <StudentSelect students={students} value={selectedId} onChange={setSelectedId} />
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:20, marginBottom:20 }}>

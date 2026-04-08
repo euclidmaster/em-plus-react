@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getStudents, getGrades, upsertGrade, deleteGrade } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
+import StudentSelect from '../components/common/StudentSelect.jsx';
 
 const EXAM_TABS = [
   { id:'mid1',  label:'1학기 중간' },
@@ -71,10 +72,7 @@ export default function GradePage() {
       <div className="card">
         <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16, flexWrap:'wrap' }}>
           <label style={{ fontSize:13, fontWeight:600, color:'#64748b' }}>학생</label>
-          <select value={selectedId ?? ''} onChange={e => setSelectedId(e.target.value)}
-            style={{ padding:'8px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}>
-            {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade ?? '?'})</option>)}
-          </select>
+          <StudentSelect students={students} value={selectedId} onChange={setSelectedId} />
         </div>
 
         {/* 시험 탭 */}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getStudents, getWeeklyPlans, upsertWeeklyPlan, deleteWeeklyPlan } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
+import StudentSelect from '../components/common/StudentSelect.jsx';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
 const COLORS   = ['blue','green','orange','purple','red'];
@@ -73,10 +74,7 @@ export default function WeeklyPlanPage() {
 
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap' }}>
         <label style={{ fontSize:13, fontWeight:600, color:'#64748b' }}>학생</label>
-        <select value={selectedId ?? ''} onChange={e => setSelectedId(e.target.value)}
-          style={{ padding:'8px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}>
-          {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
+        <StudentSelect students={students} value={selectedId} onChange={setSelectedId} />
         <label style={{ fontSize:13, fontWeight:600, color:'#64748b' }}>주차</label>
         <input type="date" value={weekStart} onChange={e => setWeekStart(getMonday(e.target.value))}
           style={{ padding:'8px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }} />

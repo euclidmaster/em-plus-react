@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getStudents, getStudent, updateStudent, getTeachers } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
+import StudentSelect from '../components/common/StudentSelect.jsx';
 
 export default function StudentInfoPage() {
   const [students, setStudents] = useState([]);
@@ -45,19 +46,10 @@ export default function StudentInfoPage() {
         <h2><i className="fas fa-user-graduate"></i> 학생 개인정보</h2>
       </div>
 
-      {/* 학생 선택 칩 */}
-      <div className="student-selector" style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:20 }}>
-        {students.map(s => (
-          <button key={s.id} onClick={() => selectStudent(s.id)}
-            style={{
-              padding:'6px 16px', borderRadius:20, fontSize:13, fontWeight:600, cursor:'pointer',
-              background: s.id === selectedId ? '#4361ee' : '#fff',
-              color:      s.id === selectedId ? '#fff'    : '#475569',
-              border:     s.id === selectedId ? '1.5px solid #4361ee' : '1.5px solid #e2e8f0',
-            }}>
-            {s.name}
-          </button>
-        ))}
+      {/* 학생 선택 */}
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:20 }}>
+        <label style={{ fontSize:13, fontWeight:600, color:'#64748b' }}>학생</label>
+        <StudentSelect students={students} value={selectedId} onChange={id => selectStudent(id)} />
       </div>
 
       {detail && (
