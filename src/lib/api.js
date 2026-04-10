@@ -11,6 +11,15 @@ export async function getStudent(id) {
   if (error) throw error;
   return data;
 }
+export async function getStudentLinkedProfile(profileId) {
+  if (!profileId) return null;
+  const { data } = await supabase.from('profiles').select('id, name, role').eq('id', profileId).single();
+  return data ?? null;
+}
+export async function clearStudentAccount(studentId) {
+  const { error } = await supabase.from('students').update({ profile_id: null }).eq('id', studentId);
+  if (error) throw error;
+}
 export async function createStudent(payload) {
   const { data, error } = await supabase.from('students').insert(payload).select().single();
   if (error) throw error;
@@ -152,6 +161,66 @@ export async function getTeachers() {
 }
 export async function createTeacher(payload) {
   const { data, error } = await supabase.from('teachers').insert(payload).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function updateTeacher(id, payload) {
+  const { data, error } = await supabase.from('teachers').update(payload).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteTeacher(id) {
+  const { error } = await supabase.from('teachers').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function getStudentsByClass(grade, className) {
+  let q = supabase.from('students').select('id, name, grade, class_name, status').eq('status', '재원중');
+  if (grade) q = q.eq('grade', grade);
+  if (className) q = q.eq('class_name', className);
+  const { data, error } = await q.order('name');
+  if (error) throw error;
+  return data;
+}
+export async function bulkCreateHomework(studentIds, payload) {
+  const rows = studentIds.map(student_id => ({ ...payload, student_id }));
+  const { data, error } = await supabase.from('homeworks').insert(rows).select();
+  if (error) throw error;
+  return data;
+}
+
+// ==================== 학생 본인 조회 ====================
+export async function getStudentByProfileId(profileId) {
+  const { data, error } = await supabase
+    .from('students')
+    .select('*, teachers(id, name, title, profile_id)')
+    .eq('profile_id', profileId)
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function getMessagesBetween(userId1, userId2) {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .or(`and(from_id.eq.${userId1},to_id.eq.${userId2}),and(from_id.eq.${userId2},to_id.eq.${userId1})`)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+// ==================== 선생님 열람 권한 ====================
+export async function getTeacherPermissions() {
+  const { data, error } = await supabase.from('teacher_permissions').select('*');
+  if (error) throw error;
+  return data; // [{ teacher_id, can_view_personal_info, can_view_grades, can_view_report }]
+}
+export async function upsertTeacherPermission(teacherId, payload) {
+  const { data, error } = await supabase
+    .from('teacher_permissions')
+    .upsert({ teacher_id: teacherId, ...payload }, { onConflict: 'teacher_id' })
+    .select()
+    .single();
   if (error) throw error;
   return data;
 }

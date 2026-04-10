@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getStudents, createStudent, getTeachers } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
 
 const GRADE_OPTIONS = ['중1', '중2', '중3', '고1', '고2', '고3'];
 const GRADE_FILTERS = ['전체', ...GRADE_OPTIONS];
+const STATUS_FILTERS = ['전체', '재원중', '휴원', '퇴원'];
 
 function normalizeGrade(grade) {
   if (!grade) return '기타';
@@ -19,13 +21,21 @@ function normalizeGrade(grade) {
   return '기타';
 }
 
+const STATUS_STYLE = {
+  '재원중': { background: '#dcfce7', color: '#16a34a' },
+  '휴원':   { background: '#fef9c3', color: '#92400e' },
+  '퇴원':   { background: '#fee2e2', color: '#dc2626' },
+};
+
 export default function StudentListPage() {
-  const [students, setStudents]     = useState([]);
-  const [teachers, setTeachers]     = useState([]);
+  const navigate = useNavigate();
+  const [students, setStudents]       = useState([]);
+  const [teachers, setTeachers]       = useState([]);
   const [gradeFilter, setGradeFilter] = useState('전체');
   const [classFilter, setClassFilter] = useState('전체');
-  const [searchQ, setSearchQ]       = useState('');
-  const [showModal, setShowModal]   = useState(false);
+  const [statusFilter, setStatusFilter] = useState('전체');
+  const [searchQ, setSearchQ]         = useState('');
+  const [showModal, setShowModal]     = useState(false);
   const [form, setForm] = useState({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
   const showToast = useToast();
 
@@ -41,23 +51,28 @@ export default function StudentListPage() {
     } catch { showToast('학생 명단 로드 실패', 'error'); }
   }
 
-  // 학년별 카운트
+  // 재원상태 필터를 먼저 적용한 베이스
+  const statusBase = statusFilter === '전체'
+    ? students
+    : students.filter(s => s.status === statusFilter);
+
+  // 학년별 카운트 (상태 필터 적용 후)
   const gradeCounts = GRADE_FILTERS.reduce((acc, g) => {
     acc[g] = g === '전체'
-      ? students.length
-      : students.filter(s => normalizeGrade(s.grade) === g).length;
+      ? statusBase.length
+      : statusBase.filter(s => normalizeGrade(s.grade) === g).length;
     return acc;
   }, {});
 
   // 선택된 학년 기준으로 반 목록 추출
   const availableClasses = (() => {
-    const base = gradeFilter === '전체' ? students : students.filter(s => normalizeGrade(s.grade) === gradeFilter);
+    const base = gradeFilter === '전체' ? statusBase : statusBase.filter(s => normalizeGrade(s.grade) === gradeFilter);
     const classes = [...new Set(base.map(s => s.class_name).filter(Boolean))].sort();
     return ['전체', ...classes];
   })();
 
   // 최종 필터링
-  const filtered = students.filter(s => {
+  const filtered = statusBase.filter(s => {
     if (gradeFilter !== '전체' && normalizeGrade(s.grade) !== gradeFilter) return false;
     if (classFilter !== '전체' && s.class_name !== classFilter) return false;
     if (searchQ) {
@@ -76,6 +91,12 @@ export default function StudentListPage() {
     setClassFilter('전체');
   }
 
+  function handleStatusFilter(s) {
+    setStatusFilter(s);
+    setGradeFilter('전체');
+    setClassFilter('전체');
+  }
+
   async function submit() {
     if (!form.name.trim()) { showToast('이름을 입력하세요.', 'error'); return; }
     try {
@@ -91,6 +112,35 @@ export default function StudentListPage() {
     <div>
       <div className="section-title-area">
         <h2><i className="fas fa-users"></i> 학생 명단</h2>
+      </div>
+
+      {/* 재원상태 필터 */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 8, letterSpacing: '0.05em' }}>재원 상태</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {STATUS_FILTERS.map(s => {
+            const active = statusFilter === s;
+            const count = s === '전체' ? students.length : students.filter(st => st.status === s).length;
+            const style = STATUS_STYLE[s] ?? { background: '#f1f5f9', color: '#64748b' };
+            return (
+              <button key={s} onClick={() => handleStatusFilter(s)} style={{
+                padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                border: '1.5px solid ' + (active ? style.color : '#e2e8f0'),
+                background: active ? style.color : '#fff',
+                color: active ? '#fff' : '#475569',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                {s}
+                <span style={{
+                  fontSize: 11, fontWeight: 700, minWidth: 18, height: 18, borderRadius: 9,
+                  background: active ? 'rgba(255,255,255,0.3)' : '#f1f5f9',
+                  color: active ? '#fff' : '#64748b',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px',
+                }}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* 학년 필터 */}
@@ -128,7 +178,7 @@ export default function StudentListPage() {
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {availableClasses.map(c => {
               const active = classFilter === c;
-              const base = gradeFilter === '전체' ? students : students.filter(s => normalizeGrade(s.grade) === gradeFilter);
+              const base = gradeFilter === '전체' ? statusBase : statusBase.filter(s => normalizeGrade(s.grade) === gradeFilter);
               const count = c === '전체' ? base.length : base.filter(s => s.class_name === c).length;
               return (
                 <button key={c} onClick={() => setClassFilter(c)} style={{
@@ -138,7 +188,7 @@ export default function StudentListPage() {
                   color: active ? '#fff' : '#475569',
                   display: 'flex', alignItems: 'center', gap: 5,
                 }}>
-                  {c === '전체' ? '전체' : `${c}`}
+                  {c}
                   <span style={{
                     fontSize: 11, fontWeight: 700, minWidth: 16, height: 16, borderRadius: 8,
                     background: active ? 'rgba(255,255,255,0.3)' : '#f1f5f9',
@@ -173,7 +223,7 @@ export default function StudentListPage() {
         <table className="student-list-table" style={{ width:'100%', borderCollapse:'collapse' }}>
           <thead>
             <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-              {['#','이름','학년','반','학교','담당강사','등록일','상태'].map(h => (
+              {['#','이름','학년','반','학교','담당강사','등록일','상태','계정'].map(h => (
                 <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:13, color:'#64748b', fontWeight:600 }}>{h}</th>
               ))}
             </tr>
@@ -182,7 +232,13 @@ export default function StudentListPage() {
             {filtered.length === 0
               ? <tr><td colSpan={8} style={{ textAlign:'center', padding:40, color:'#94a3b8' }}>해당하는 학생이 없습니다.</td></tr>
               : filtered.map((s, i) => (
-                <tr key={s.id} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                <tr
+                  key={s.id}
+                  onClick={() => navigate(`/student-info?id=${s.id}`)}
+                  style={{ borderBottom:'1px solid #f1f5f9', cursor:'pointer', transition:'background 0.15s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                  onMouseLeave={e => e.currentTarget.style.background = ''}
+                >
                   <td style={{ padding:'10px 14px', fontSize:13, color:'#94a3b8' }}>{i+1}</td>
                   <td style={{ padding:'10px 14px', fontWeight:600 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
@@ -216,9 +272,14 @@ export default function StudentListPage() {
                   <td style={{ padding:'10px 14px' }}>
                     <span style={{
                       padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600,
-                      background: s.status==='재원중' ? '#dcfce7' : '#fee2e2',
-                      color: s.status==='재원중' ? '#16a34a' : '#dc2626',
+                      ...(STATUS_STYLE[s.status] ?? { background:'#f1f5f9', color:'#64748b' }),
                     }}>{s.status}</span>
+                  </td>
+                  <td style={{ padding:'10px 14px' }}>
+                    {s.profile_id
+                      ? <span style={{ padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600, background:'#dcfce7', color:'#16a34a' }}>연결됨</span>
+                      : <span style={{ padding:'3px 10px', borderRadius:20, fontSize:12, fontWeight:600, background:'#f1f5f9', color:'#94a3b8' }}>미연결</span>
+                    }
                   </td>
                 </tr>
               ))
