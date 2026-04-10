@@ -20,6 +20,29 @@ export async function clearStudentAccount(studentId) {
   const { error } = await supabase.from('students').update({ profile_id: null }).eq('id', studentId);
   if (error) throw error;
 }
+// 학생 역할 계정 중 students에 아직 연결 안 된 것만 반환
+export async function getUnlinkedStudentProfiles() {
+  const { data: allProfiles, error } = await supabase
+    .from('profiles')
+    .select('id, name, role')
+    .eq('role', 'student');
+  if (error) throw error;
+
+  const { data: linked } = await supabase
+    .from('students')
+    .select('profile_id')
+    .not('profile_id', 'is', null);
+
+  const linkedIds = new Set((linked ?? []).map(s => s.profile_id));
+  return (allProfiles ?? []).filter(p => !linkedIds.has(p.id));
+}
+export async function linkStudentAccount(studentId, profileId) {
+  const { error } = await supabase
+    .from('students')
+    .update({ profile_id: profileId })
+    .eq('id', studentId);
+  if (error) throw error;
+}
 export async function createStudent(payload) {
   const { data, error } = await supabase.from('students').insert(payload).select().single();
   if (error) throw error;

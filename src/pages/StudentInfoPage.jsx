@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getStudents, getStudent, updateStudent, deleteStudent, getTeachers,
   getStudentLinkedProfile, clearStudentAccount,
+  getUnlinkedStudentProfiles, linkStudentAccount,
 } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
@@ -10,13 +11,15 @@ import StudentSelect from '../components/common/StudentSelect.jsx';
 export default function StudentInfoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [students, setStudents]       = useState([]);
-  const [teachers, setTeachers]       = useState([]);
-  const [selectedId, setSelectedId]   = useState(null);
-  const [detail, setDetail]           = useState(null);
-  const [linkedProfile, setLinkedProfile] = useState(null);
-  const [editing, setEditing]         = useState(false);
-  const [form, setForm]               = useState({});
+  const [students, setStudents]             = useState([]);
+  const [teachers, setTeachers]             = useState([]);
+  const [selectedId, setSelectedId]         = useState(null);
+  const [detail, setDetail]                 = useState(null);
+  const [linkedProfile, setLinkedProfile]   = useState(null);
+  const [unlinkedProfiles, setUnlinkedProfiles] = useState([]);
+  const [linkTarget, setLinkTarget]         = useState('');
+  const [editing, setEditing]               = useState(false);
+  const [form, setForm]                     = useState({});
   const showToast = useToast();
 
   useEffect(() => {
@@ -33,6 +36,7 @@ export default function StudentInfoPage() {
     setSelectedId(id);
     setEditing(false);
     setLinkedProfile(null);
+    setLinkTarget('');
     setSearchParams({ id });
     try {
       const d = await getStudent(id);
@@ -41,6 +45,10 @@ export default function StudentInfoPage() {
       if (d.profile_id) {
         const prof = await getStudentLinkedProfile(d.profile_id);
         setLinkedProfile(prof);
+      } else {
+        // 미연결 상태면 연결 가능한 계정 목록 로드
+        const unlinked = await getUnlinkedStudentProfiles();
+        setUnlinkedProfiles(unlinked);
       }
     } catch { showToast('학생 정보 로드 실패', 'error'); }
   }
@@ -65,14 +73,29 @@ export default function StudentInfoPage() {
   }
 
   async function disconnectAccount() {
-    if (!confirm(`"${detail.name}" 학생의 계정 연결을 해제하시겠습니까?\n학생이 다시 로그인하면 재연결됩니다.`)) return;
+    if (!confirm(`"${detail.name}" 학생의 계정 연결을 해제하시겠습니까?`)) return;
     try {
       await clearStudentAccount(selectedId);
       showToast('계정 연결이 해제되었습니다.');
       setLinkedProfile(null);
-      const d = await getStudent(selectedId);
+      const [d, unlinked] = await Promise.all([getStudent(selectedId), getUnlinkedStudentProfiles()]);
       setDetail(d);
+      setUnlinkedProfiles(unlinked);
+      setLinkTarget('');
     } catch (e) { showToast('해제 실패: ' + e.message, 'error'); }
+  }
+
+  async function connectAccount() {
+    if (!linkTarget) { showToast('연결할 계정을 선택하세요.', 'error'); return; }
+    try {
+      await linkStudentAccount(selectedId, linkTarget);
+      showToast('계정이 연결되었습니다.');
+      const [d, prof] = await Promise.all([getStudent(selectedId), getStudentLinkedProfile(linkTarget)]);
+      setDetail(d);
+      setLinkedProfile(prof);
+      setLinkTarget('');
+      setUnlinkedProfiles([]);
+    } catch (e) { showToast('연결 실패: ' + e.message, 'error'); }
   }
 
   return (
@@ -184,25 +207,19 @@ export default function StudentInfoPage() {
             </div>
 
             {detail.profile_id ? (
+              /* ── 연결됨 ── */
               <div>
-                {/* 연결됨 */}
                 <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', background:'#f0fdf4', borderRadius:10, border:'1.5px solid #bbf7d0', marginBottom:12 }}>
                   <div style={{ width:36, height:36, borderRadius:'50%', background:'#22c55e', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>
                     <i className="fas fa-check"></i>
                   </div>
                   <div>
                     <div style={{ fontWeight:700, fontSize:14, color:'#16a34a' }}>계정 연결됨</div>
-                    {linkedProfile
-                      ? <div style={{ fontSize:13, color:'#64748b', marginTop:2 }}>
-                          {linkedProfile.name} ({linkedProfile.role === 'student' ? '학생' : linkedProfile.role})
-                        </div>
-                      : <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>계정 정보 로드 중...</div>
-                    }
+                    <div style={{ fontSize:13, color:'#64748b', marginTop:2 }}>
+                      {linkedProfile ? linkedProfile.name : '로드 중...'}
+                    </div>
                   </div>
                 </div>
-                <p style={{ fontSize:12, color:'#94a3b8', marginBottom:10 }}>
-                  잘못 연결된 경우 해제하면 학생이 다시 로그인할 때 재연결됩니다.
-                </p>
                 <button onClick={disconnectAccount} style={{
                   padding:'8px 16px', border:'1.5px solid #fca5a5', borderRadius:8,
                   background:'#fff', color:'#dc2626', cursor:'pointer', fontSize:13, fontWeight:600,
@@ -211,20 +228,59 @@ export default function StudentInfoPage() {
                 </button>
               </div>
             ) : (
+              /* ── 미연결 ── */
               <div>
-                {/* 미연결 */}
-                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', background:'#f8fafc', borderRadius:10, border:'1.5px solid #e2e8f0', marginBottom:12 }}>
-                  <div style={{ width:36, height:36, borderRadius:'50%', background:'#e2e8f0', color:'#94a3b8', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', background:'#fff7ed', borderRadius:10, border:'1.5px solid #fed7aa', marginBottom:16 }}>
+                  <div style={{ width:36, height:36, borderRadius:'50%', background:'#fb923c', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', fontSize:15, flexShrink:0 }}>
                     <i className="fas fa-unlink"></i>
                   </div>
                   <div>
-                    <div style={{ fontWeight:700, fontSize:14, color:'#64748b' }}>계정 미연결</div>
-                    <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>학생이 아직 회원가입을 하지 않았습니다.</div>
+                    <div style={{ fontWeight:700, fontSize:14, color:'#c2410c' }}>계정 미연결</div>
+                    <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>로그인 계정과 연결되지 않은 상태입니다.</div>
                   </div>
                 </div>
-                <p style={{ fontSize:12, color:'#94a3b8' }}>
-                  학생이 회원가입 시 본인 이름을 선택하면 자동으로 연결됩니다.
-                </p>
+
+                {/* 관리자 직접 연결 */}
+                <div style={{ background:'#f8fafc', borderRadius:10, padding:'14px 16px', border:'1.5px solid #e2e8f0' }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'#475569', marginBottom:10 }}>
+                    <i className="fas fa-user-plus" style={{ marginRight:6 }}></i>
+                    관리자 직접 연결
+                  </div>
+                  {unlinkedProfiles.length === 0 ? (
+                    <p style={{ fontSize:13, color:'#94a3b8', margin:0 }}>
+                      연결 가능한 학생 계정이 없습니다.<br/>
+                      학생이 먼저 회원가입을 완료해야 합니다.
+                    </p>
+                  ) : (
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      <select
+                        value={linkTarget}
+                        onChange={e => setLinkTarget(e.target.value)}
+                        style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:14 }}
+                      >
+                        <option value="">계정 선택...</option>
+                        {unlinkedProfiles.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={connectAccount}
+                        disabled={!linkTarget}
+                        style={{
+                          padding:'9px 16px', background: linkTarget ? '#4361ee' : '#e2e8f0',
+                          color: linkTarget ? '#fff' : '#94a3b8',
+                          border:'none', borderRadius:8, cursor: linkTarget ? 'pointer' : 'default',
+                          fontSize:13, fontWeight:600, flexShrink:0,
+                        }}
+                      >
+                        <i className="fas fa-link"></i> 연결
+                      </button>
+                    </div>
+                  )}
+                  <p style={{ fontSize:11, color:'#94a3b8', marginTop:8, marginBottom:0 }}>
+                    * 학생이 회원가입 시 본인 이름을 선택했다면 자동으로 연결됩니다.
+                  </p>
+                </div>
               </div>
             )}
           </div>
