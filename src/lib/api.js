@@ -73,7 +73,8 @@ export async function upsertGrade(payload) {
     if (error) throw error;
     return data;
   } else {
-    const { data, error } = await supabase.from('grades').insert(payload).select().single();
+    const { id: _id, ...insertPayload } = payload;
+    const { data, error } = await supabase.from('grades').insert(insertPayload).select().single();
     if (error) throw error;
     return data;
   }
@@ -98,7 +99,8 @@ export async function upsertWeeklyPlan(payload) {
     if (error) throw error;
     return data;
   } else {
-    const { data, error } = await supabase.from('weekly_plans').insert(payload).select().single();
+    const { id: _id, ...insertPayload } = payload; // id: null 제거
+    const { data, error } = await supabase.from('weekly_plans').insert(insertPayload).select().single();
     if (error) throw error;
     return data;
   }
