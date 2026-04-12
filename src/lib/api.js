@@ -20,8 +20,7 @@ export async function getStaffProfiles() {
   const { data } = await supabase
     .from('profiles')
     .select('id, name, role')
-    .in('role', ['admin', 'assistant', 'teacher'])
-    .eq('approved', true);
+    .in('role', ['admin', 'assistant', 'teacher']);
   return data ?? [];
 }
 export async function clearStudentAccount(studentId) {
