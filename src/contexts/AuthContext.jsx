@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
+import { getTeacherByProfileId, getTeacherPermissionById } from '../lib/api.js';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser]                     = useState(null);
+  const [profile, setProfile]               = useState(null);
+  const [loading, setLoading]               = useState(true);
+  const [teacherPermissions, setTeacherPermissions] = useState(null);
 
   async function loadProfile(u) {
     if (!u) { setProfile(null); return; }
@@ -19,14 +21,21 @@ export function AuthProvider({ children }) {
 
     let prof;
 
+    const studentInfo = meta.studentInfo ?? {};
+
     if (data) {
-      // 이미 profile 행이 있음
-      // → 회원가입 시 metadata에 role이 저장된 경우에만 DB 업데이트 (기존 admin 계정은 건드리지 않음)
       const needsUpdate = (metaRole && data.role !== metaRole) || (metaName && data.name !== metaName);
       if (needsUpdate) {
         const patch = {};
         if (metaRole && data.role !== metaRole) patch.role = metaRole;
         if (metaName && data.name !== metaName) patch.name = metaName;
+        // 학생이면 추가 정보도 저장
+        if ((metaRole ?? data.role) === 'student' && studentInfo) {
+          if (studentInfo.grade)       patch.grade       = studentInfo.grade;
+          if (studentInfo.class_name)  patch.class_name  = studentInfo.class_name;
+          if (studentInfo.school_name) patch.school_name = studentInfo.school_name;
+          if (studentInfo.phone)       patch.phone       = studentInfo.phone;
+        }
         const { data: updated } = await supabase.from('profiles').update(patch).eq('id', u.id).select().single();
         prof = updated ?? { ...data, ...patch };
       } else {
@@ -37,13 +46,32 @@ export function AuthProvider({ children }) {
       const fallback = {
         id:   u.id,
         name: metaName ?? u.email,
-        role: metaRole ?? 'student',   // 기본값 student (admin 아님)
+        role: metaRole ?? 'student',
+        ...(metaRole === 'student' && studentInfo ? {
+          grade:       studentInfo.grade       ?? null,
+          class_name:  studentInfo.class_name  ?? null,
+          school_name: studentInfo.school_name ?? null,
+          phone:       studentInfo.phone       ?? null,
+        } : {}),
       };
       await supabase.from('profiles').upsert(fallback);
       prof = fallback;
     }
 
     setProfile(prof);
+
+    // teacher 역할이면 열람 권한 로드
+    if (prof.role === 'teacher') {
+      try {
+        const teacher = await getTeacherByProfileId(prof.id);
+        if (teacher) {
+          const perms = await getTeacherPermissionById(teacher.id);
+          setTeacherPermissions(perms); // null = 권한 레코드 없음 (기본 허용)
+        }
+      } catch { /* 권한 로드 실패 시 기본 허용 */ }
+    } else {
+      setTeacherPermissions(null);
+    }
 
     // 학생 역할이고, students.profile_id 미연결이면 자동 연결
     if (prof.role === 'student' && meta.studentId) {
@@ -86,7 +114,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, profile, loading, teacherPermissions, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

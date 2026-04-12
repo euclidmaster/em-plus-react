@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { getStudents, getDailyRecords, createDailyRecord, updateDailyRecord, deleteDailyRecord } from '../lib/api.js';
+import { getDailyRecords, createDailyRecord, updateDailyRecord, deleteDailyRecord } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
+import { useStudentList } from '../hooks/useStudentList.js';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
 const COLORS = ['blue','green','orange','purple','red'];
 const colorMap = { blue:'#4361ee', green:'#2dc653', orange:'#f4a261', purple:'#7209b7', red:'#e63946' };
 
 export default function DailyRecordPage() {
-  const [students, setStudents]   = useState([]);
+  const { students } = useStudentList();
   const [selectedId, setSelectedId] = useState(null);
   const [date, setDate]           = useState(new Date().toISOString().slice(0,10));
   const [records, setRecords]     = useState([]);
@@ -18,8 +19,8 @@ export default function DailyRecordPage() {
   const showToast = useToast();
 
   useEffect(() => {
-    getStudents().then(s => { setStudents(s); if (s.length) { setSelectedId(s[0].id); } }).catch(console.error);
-  }, []);
+    if (students.length && selectedId === null) setSelectedId(students[0].id);
+  }, [students]);
 
   useEffect(() => { if (selectedId) load(); }, [selectedId, date]);
 

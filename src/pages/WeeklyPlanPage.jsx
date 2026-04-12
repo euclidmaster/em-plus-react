@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { getStudents, getWeeklyPlans, upsertWeeklyPlan, deleteWeeklyPlan } from '../lib/api.js';
+import { getWeeklyPlans, upsertWeeklyPlan, deleteWeeklyPlan } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
+import { useStudentList } from '../hooks/useStudentList.js';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
 const COLORS   = ['blue','green','orange','purple','red'];
@@ -15,15 +16,15 @@ function getMonday(date) {
 }
 
 export default function WeeklyPlanPage() {
-  const [students, setStudents]   = useState([]);
+  const { students } = useStudentList();
   const [selectedId, setSelectedId] = useState(null);
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const [plans, setPlans]         = useState([]);
   const showToast = useToast();
 
   useEffect(() => {
-    getStudents().then(s => { setStudents(s); if (s.length) { setSelectedId(s[0].id); } }).catch(console.error);
-  }, []);
+    if (students.length && selectedId === null) setSelectedId(students[0].id);
+  }, [students]);
 
   useEffect(() => {
     if (selectedId) load();

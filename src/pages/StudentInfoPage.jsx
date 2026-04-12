@@ -1,17 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
-  getStudents, getStudent, updateStudent, deleteStudent, getTeachers,
+  getStudent, updateStudent, deleteStudent, getTeachers,
   getStudentLinkedProfile, clearStudentAccount,
   getUnlinkedStudentProfiles, linkStudentAccount,
+  getStudentTeachers, addStudentTeacher, removeStudentTeacher,
+  getTeacherNotes, addTeacherNote, deleteTeacherNote,
 } from '../lib/api.js';
+import { useAuth } from '../contexts/AuthContext.jsx';
+import { useStudentList } from '../hooks/useStudentList.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
 
 export default function StudentInfoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const [students, setStudents]             = useState([]);
+  const { students } = useStudentList();
+  const initDone = useRef(false);
   const [teachers, setTeachers]             = useState([]);
   const [selectedId, setSelectedId]         = useState(null);
   const [detail, setDetail]                 = useState(null);
@@ -20,42 +25,92 @@ export default function StudentInfoPage() {
   const [linkTarget, setLinkTarget]         = useState('');
   const [editing, setEditing]               = useState(false);
   const [form, setForm]                     = useState({});
+  const [assignedTeachers, setAssignedTeachers] = useState([]);
+  const [addTeacherId, setAddTeacherId]     = useState('');
+  const [notes, setNotes]                   = useState([]);
+  const [noteInput, setNoteInput]           = useState('');
   const showToast = useToast();
+  const { profile } = useAuth();
 
   useEffect(() => {
-    Promise.all([getStudents(), getTeachers()]).then(([s, t]) => {
-      setStudents(s);
-      setTeachers(t);
-      const urlId = searchParams.get('id');
-      const initId = urlId ?? (s.length ? s[0].id : null);
-      if (initId) selectStudent(initId);
-    }).catch(console.error);
+    getTeachers().then(setTeachers).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (!students.length || initDone.current) return;
+    initDone.current = true;
+    const urlId = searchParams.get('id');
+    const initId = urlId ?? students[0].id;
+    if (initId) selectStudent(initId);
+  }, [students]);
 
   async function selectStudent(id) {
     setSelectedId(id);
     setEditing(false);
     setLinkedProfile(null);
     setLinkTarget('');
+    setAddTeacherId('');
+    setNotes([]);
+    setNoteInput('');
     setSearchParams({ id });
     try {
-      const d = await getStudent(id);
+      const [d, assigned, noteList] = await Promise.all([
+        getStudent(id), getStudentTeachers(id), getTeacherNotes(id),
+      ]);
       setDetail(d);
-      setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', teacher_id: d.teacher_id??'', status: d.status });
+      setAssignedTeachers(assigned);
+      setNotes(noteList);
+      setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', status: d.status });
       if (d.profile_id) {
         const prof = await getStudentLinkedProfile(d.profile_id);
         setLinkedProfile(prof);
       } else {
-        // 미연결 상태면 연결 가능한 계정 목록 로드
         const unlinked = await getUnlinkedStudentProfiles();
         setUnlinkedProfiles(unlinked);
       }
     } catch { showToast('학생 정보 로드 실패', 'error'); }
   }
 
+  async function submitNote() {
+    const text = noteInput.trim();
+    if (!text || !selectedId) return;
+    try {
+      const row = await addTeacherNote({ student_id: selectedId, author_name: profile?.name ?? '선생님', content: text });
+      setNotes(prev => [...prev, row]);
+      setNoteInput('');
+    } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+  }
+
+  async function removeNote(id) {
+    try {
+      await deleteTeacherNote(id);
+      setNotes(prev => prev.filter(n => n.id !== id));
+    } catch (e) { showToast('삭제 실패: ' + e.message, 'error'); }
+  }
+
+  async function handleAddTeacher() {
+    if (!addTeacherId) return;
+    if (assignedTeachers.length >= 10) { showToast('담당 강사는 최대 10명까지 배정 가능합니다.', 'error'); return; }
+    if (assignedTeachers.some(a => a.teacher_id === addTeacherId)) { showToast('이미 배정된 강사입니다.', 'error'); return; }
+    try {
+      const row = await addStudentTeacher(selectedId, addTeacherId);
+      setAssignedTeachers(prev => [...prev, row]);
+      setAddTeacherId('');
+      showToast('담당 강사가 추가되었습니다.');
+    } catch (e) { showToast('추가 실패: ' + e.message, 'error'); }
+  }
+
+  async function handleRemoveTeacher(id) {
+    try {
+      await removeStudentTeacher(id);
+      setAssignedTeachers(prev => prev.filter(a => a.id !== id));
+      showToast('담당 강사가 제거되었습니다.');
+    } catch (e) { showToast('제거 실패: ' + e.message, 'error'); }
+  }
+
   async function save() {
     try {
-      await updateStudent(selectedId, { ...form, teacher_id: form.teacher_id || null });
+      await updateStudent(selectedId, form);
       showToast('정보가 저장되었습니다.');
       setEditing(false);
       const d = await getStudent(selectedId);
@@ -174,17 +229,7 @@ export default function StudentInfoPage() {
                   : <span style={{ flex:1, fontSize:14 }}>{detail.class_name ?? '-'}</span>
                 }
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-                <span style={labelStyle}>담당강사</span>
-                {editing
-                  ? <select value={form.teacher_id ?? ''} onChange={e => setForm(f => ({...f, teacher_id: e.target.value}))}
-                      style={{ flex:1, padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14 }}>
-                      <option value="">미배정</option>
-                      {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
-                  : <span style={{ flex:1, fontSize:14 }}>{detail.teachers?.name ? `${detail.teachers.name} 선생님` : '-'}</span>
-                }
-              </div>
+              {/* 담당강사는 별도 카드에서 관리 */}
               <div style={{ display:'flex', alignItems:'center', gap:16 }}>
                 <span style={labelStyle}>상태</span>
                 {editing
@@ -198,6 +243,69 @@ export default function StudentInfoPage() {
                 }
               </div>
             </div>
+          </div>
+
+          {/* 담당 강사 다중 배정 */}
+          <div className="card">
+            <div className="card-header" style={{ marginBottom:14 }}>
+              <h3><i className="fas fa-chalkboard-teacher"></i> 담당 강사
+                <span style={{ marginLeft:10, fontSize:12, fontWeight:400, color:'#94a3b8' }}>
+                  {assignedTeachers.length}/10명
+                </span>
+              </h3>
+            </div>
+
+            {/* 배정된 강사 목록 */}
+            {assignedTeachers.length === 0
+              ? <p style={{ fontSize:13, color:'#94a3b8', marginBottom:14 }}>배정된 담당 강사가 없습니다.</p>
+              : <div style={{ display:'grid', gap:8, marginBottom:14 }}>
+                  {assignedTeachers.map(a => (
+                    <div key={a.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', background:'#f8fafc', borderRadius:8, border:'1.5px solid #e2e8f0' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                        <div style={{ width:30, height:30, borderRadius:'50%', background:'#eef2ff', color:'#4361ee', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>
+                          <i className="fas fa-user-tie"></i>
+                        </div>
+                        <div>
+                          <span style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{a.teachers?.name} 선생님</span>
+                          {a.teachers?.title && <span style={{ fontSize:12, color:'#94a3b8', marginLeft:8 }}>{a.teachers.title}</span>}
+                        </div>
+                      </div>
+                      <button onClick={() => handleRemoveTeacher(a.id)} style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', fontSize:14, padding:'4px 8px', borderRadius:6 }} title="제거">
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+            }
+
+            {/* 강사 추가 */}
+            {assignedTeachers.length < 10 && (
+              <div style={{ display:'flex', gap:8 }}>
+                <select
+                  value={addTeacherId}
+                  onChange={e => setAddTeacherId(e.target.value)}
+                  style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:14 }}
+                >
+                  <option value="">강사 선택...</option>
+                  {teachers
+                    .filter(t => !assignedTeachers.some(a => a.teacher_id === t.id))
+                    .map(t => <option key={t.id} value={t.id}>{t.name}{t.title ? ` (${t.title})` : ''}</option>)
+                  }
+                </select>
+                <button
+                  onClick={handleAddTeacher}
+                  disabled={!addTeacherId}
+                  style={{ padding:'9px 18px', background: addTeacherId ? '#4361ee' : '#e2e8f0', color: addTeacherId ? '#fff' : '#94a3b8', border:'none', borderRadius:8, cursor: addTeacherId ? 'pointer' : 'default', fontSize:13, fontWeight:600, flexShrink:0 }}
+                >
+                  <i className="fas fa-plus"></i> 추가
+                </button>
+              </div>
+            )}
+            {assignedTeachers.length >= 10 && (
+              <p style={{ fontSize:12, color:'#f59e0b', marginTop:4 }}>
+                <i className="fas fa-exclamation-triangle" style={{ marginRight:4 }}></i>최대 10명까지 배정 가능합니다.
+              </p>
+            )}
           </div>
 
           {/* 계정 연결 현황 */}
@@ -283,6 +391,53 @@ export default function StudentInfoPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* 교사 소통 */}
+          <div className="card">
+            <div className="card-header" style={{ marginBottom:14 }}>
+              <h3><i className="fas fa-comments"></i> 교사 소통
+                <span style={{ marginLeft:8, fontSize:12, fontWeight:400, color:'#94a3b8' }}>담당 선생님 간 공유 메모</span>
+              </h3>
+            </div>
+
+            {notes.length === 0
+              ? <p style={{ fontSize:13, color:'#94a3b8', marginBottom:14 }}>작성된 메모가 없습니다.</p>
+              : <div style={{ display:'grid', gap:8, marginBottom:14 }}>
+                  {notes.map(n => (
+                    <div key={n.id} style={{ display:'flex', gap:10, alignItems:'flex-start', padding:'10px 14px', background:'#f8fafc', borderRadius:8, border:'1.5px solid #e2e8f0' }}>
+                      <div style={{ width:30, height:30, borderRadius:'50%', background:'#e8ecff', color:'#4361ee', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, flexShrink:0 }}>
+                        {(n.author_name ?? '?')[0]}
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+                          <span style={{ fontSize:13, fontWeight:700, color:'#1e293b' }}>{n.author_name}</span>
+                          <span style={{ fontSize:11, color:'#94a3b8' }}>
+                            {new Date(n.created_at).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                          </span>
+                        </div>
+                        <p style={{ fontSize:14, color:'#475569', margin:0, lineHeight:1.6, whiteSpace:'pre-wrap' }}>{n.content}</p>
+                      </div>
+                      <button onClick={() => removeNote(n.id)} style={{ background:'none', border:'none', color:'#cbd5e1', cursor:'pointer', fontSize:12, padding:'2px 6px', flexShrink:0 }}>
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+            }
+
+            <div style={{ display:'flex', gap:8 }}>
+              <input
+                value={noteInput}
+                onChange={e => setNoteInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && submitNote()}
+                placeholder="메모 입력... (Enter로 등록)"
+                style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}
+              />
+              <button onClick={submitNote} style={{ padding:'9px 16px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600, flexShrink:0 }}>
+                <i className="fas fa-paper-plane"></i>
+              </button>
+            </div>
           </div>
 
         </div>

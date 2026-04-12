@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { getStudents, getGrades, upsertGrade, deleteGrade } from '../lib/api.js';
+import { getGrades, upsertGrade, deleteGrade } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
+import { useStudentList } from '../hooks/useStudentList.js';
 
 const EXAM_TABS = [
   { id:'mid1',  label:'1학기 중간' },
@@ -14,16 +15,15 @@ const SUBJECTS  = ['국어','수학','영어','한국사','과학','사회'];
 const RANKS     = ['1등급','2등급','3등급','4등급','5등급','6등급','7등급','8등급','9등급'];
 
 export default function GradePage() {
-  const [students, setStudents]   = useState([]);
+  const { students } = useStudentList();
   const [selectedId, setSelectedId] = useState(null);
   const [examType, setExamType]   = useState('mid1');
-  const [grades, setGrades]       = useState([]);
   const [rows, setRows]           = useState([]);
   const showToast = useToast();
 
   useEffect(() => {
-    getStudents().then(s => { setStudents(s); if (s.length) { setSelectedId(s[0].id); } }).catch(console.error);
-  }, []);
+    if (students.length && selectedId === null) setSelectedId(students[0].id);
+  }, [students]);
 
   useEffect(() => {
     if (selectedId) loadGrades();
@@ -32,7 +32,6 @@ export default function GradePage() {
   async function loadGrades() {
     try {
       const data = await getGrades(selectedId, examType);
-      setGrades(data);
       setRows(data.map(g => ({ ...g })));
     } catch { showToast('성적 로드 실패', 'error'); }
   }

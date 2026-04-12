@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getStudents, createStudent, getTeachers } from '../lib/api.js';
+import { createStudent, getTeachers } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
+import { useStudentList } from '../hooks/useStudentList.js';
 
 const GRADE_OPTIONS = ['중1', '중2', '중3', '고1', '고2', '고3'];
 const GRADE_FILTERS = ['전체', ...GRADE_OPTIONS];
@@ -29,7 +30,7 @@ const STATUS_STYLE = {
 
 export default function StudentListPage() {
   const navigate = useNavigate();
-  const [students, setStudents]       = useState([]);
+  const { students, refresh } = useStudentList();
   const [teachers, setTeachers]       = useState([]);
   const [gradeFilter, setGradeFilter] = useState('전체');
   const [classFilter, setClassFilter] = useState('전체');
@@ -40,16 +41,8 @@ export default function StudentListPage() {
   const showToast = useToast();
 
   useEffect(() => {
-    load();
     getTeachers().then(setTeachers).catch(console.error);
   }, []);
-
-  async function load() {
-    try {
-      const data = await getStudents();
-      setStudents(data);
-    } catch { showToast('학생 명단 로드 실패', 'error'); }
-  }
 
   // 재원상태 필터를 먼저 적용한 베이스
   const statusBase = statusFilter === '전체'
@@ -104,7 +97,7 @@ export default function StudentListPage() {
       showToast(`${form.name} 학생이 등록되었습니다.`);
       setShowModal(false);
       setForm({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
-      load();
+      refresh();
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
   }
 

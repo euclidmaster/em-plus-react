@@ -18,24 +18,35 @@ import PerformancePage from './pages/PerformancePage.jsx';
 import ReportPage      from './pages/ReportPage.jsx';
 import BoardPage       from './pages/BoardPage.jsx';
 import AttendancePage  from './pages/AttendancePage.jsx';
-import TeacherPage     from './pages/TeacherPage.jsx';
+import TeacherPage          from './pages/TeacherPage.jsx';
+import AccountApprovalPage  from './pages/AccountApprovalPage.jsx';
+import ProfilePage          from './pages/ProfilePage.jsx';
+import MessagesPage         from './pages/MessagesPage.jsx';
 
 // 학생 전용 페이지
-import StudentHomePage       from './pages/student/StudentHomePage.jsx';
-import StudentAttendancePage from './pages/student/StudentAttendancePage.jsx';
-import StudentWeeklyPlanPage from './pages/student/StudentWeeklyPlanPage.jsx';
+import StudentHomePage        from './pages/student/StudentHomePage.jsx';
+import StudentAttendancePage  from './pages/student/StudentAttendancePage.jsx';
+import StudentWeeklyPlanPage  from './pages/student/StudentWeeklyPlanPage.jsx';
 import StudentDailyRecordPage from './pages/student/StudentDailyRecordPage.jsx';
-import StudentHomeworkPage   from './pages/student/StudentHomeworkPage.jsx';
-import StudentChatPage       from './pages/student/StudentChatPage.jsx';
+import StudentHomeworkPage    from './pages/student/StudentHomeworkPage.jsx';
+import StudentPerformancePage from './pages/student/StudentPerformancePage.jsx';
+import StudentReportPage      from './pages/student/StudentReportPage.jsx';
+import StudentChatPage        from './pages/student/StudentChatPage.jsx';
 
 function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { profile } = useAuth();
   const role = profile?.role ?? 'admin';
 
   return (
-    <div className="app-wrapper">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <div className={`app-wrapper${sidebarCollapsed ? ' sidebar-hidden' : ''}`}>
+      <Sidebar
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(o => !o)}
+      />
       <main className="main-content">
         <TopHeader onMenuToggle={() => setSidebarOpen(o => !o)} />
         <div className="content-area">
@@ -48,7 +59,10 @@ function AppLayout() {
                 <Route path="/my/weekly-plan"   element={<StudentWeeklyPlanPage />} />
                 <Route path="/my/daily-record"  element={<StudentDailyRecordPage />} />
                 <Route path="/my/homework"      element={<StudentHomeworkPage />} />
+                <Route path="/my/performance"   element={<StudentPerformancePage />} />
+                <Route path="/my/report"        element={<StudentReportPage />} />
                 <Route path="/my/chat"          element={<StudentChatPage />} />
+                <Route path="/profile"          element={<ProfilePage />} />
                 <Route path="*"                 element={<Navigate to="/my" replace />} />
               </>
             ) : (
@@ -66,6 +80,9 @@ function AppLayout() {
                 <Route path="/board"        element={<BoardPage />} />
                 <Route path="/attendance"   element={<AttendancePage />} />
                 <Route path="/teachers"     element={<TeacherPage />} />
+                <Route path="/messages"     element={<MessagesPage />} />
+                <Route path="/approval"     element={<AccountApprovalPage />} />
+                <Route path="/profile"      element={<ProfilePage />} />
                 <Route path="*"             element={<Navigate to="/" replace />} />
               </>
             )}

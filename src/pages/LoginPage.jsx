@@ -1,37 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { supabase } from '../lib/supabase.js';
 
 export default function LoginPage() {
-  const [mode, setMode]       = useState('login');
-  const [email, setEmail]     = useState('');
-  const [pw, setPw]           = useState('');
-  const [name, setName]       = useState('');
-  const [role, setRole]       = useState('student');
-  const [students, setStudents] = useState([]);
-  const [studentId, setStudentId] = useState('');
-  const [error, setError]     = useState('');
+  const [mode, setMode]   = useState('login');
+  const [email, setEmail] = useState('');
+  const [pw, setPw]       = useState('');
+  const [name, setName]   = useState('');
+  const [role, setRole]   = useState('student');
+  // 학생 추가 정보
+  const [grade, setGrade]           = useState('');
+  const [className, setClassName]   = useState('');
+  const [schoolName, setSchoolName] = useState('');
+  const [phone, setPhone]           = useState('');
+  const [error, setError]   = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const { signIn } = useAuth();
   const navigate   = useNavigate();
-
-  // 회원가입 모드 + 학생 역할일 때 학생 목록 로드
-  useEffect(() => {
-    if (mode === 'signup' && role === 'student') {
-      supabase.from('students').select('id, name, grade, class_name').eq('status', '재원중').order('name')
-        .then(({ data }) => {
-          setStudents(data ?? []);
-          setStudentId('');
-        })
-        .catch(console.error);
-    } else {
-      setStudents([]);
-      setStudentId('');
-    }
-  }, [mode, role]);
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -53,23 +41,24 @@ export default function LoginPage() {
     setError(''); setSuccess('');
     if (!name || !email || !pw) { setError('모든 항목을 입력하세요.'); return; }
     if (pw.length < 6) { setError('비밀번호는 6자 이상이어야 합니다.'); return; }
-    if (role === 'student' && !studentId) { setError('본인의 학생 정보를 선택하세요.'); return; }
     setLoading(true);
     try {
+      const studentInfo = role === 'student'
+        ? { grade, class_name: className, school_name: schoolName, phone }
+        : null;
       const { data, error: err } = await supabase.auth.signUp({
         email, password: pw,
-        options: { data: { name, role, studentId: role === 'student' ? studentId : null } }
+        options: { data: { name, role, studentInfo } }
       });
       if (err) throw err;
 
-      // 이메일 인증 OFF인 경우 → 세션이 바로 생성됨 → 자동 이동
       if (data.session) {
         navigate('/');
       } else {
-        // 이메일 인증 ON인 경우 → 인증 메일 안내
         setSuccess('가입 완료! 이메일 인증 후 로그인하세요.');
         setMode('login');
-        setName(''); setEmail(''); setPw(''); setRole('student'); setStudentId('');
+        setName(''); setEmail(''); setPw(''); setRole('student');
+        setGrade(''); setClassName(''); setSchoolName(''); setPhone('');
       }
     } catch (err) {
       setError(err.message);
@@ -164,23 +153,30 @@ export default function LoginPage() {
               </select>
             </Field>
 
-            {/* 학생일 때만: 본인 학생 선택 */}
+            {/* 학생일 때만: 학생 정보 직접 입력 */}
             {role === 'student' && (
-              <Field label="나의 학생 정보 선택" icon="fa-user-graduate">
-                <select value={studentId} onChange={e=>setStudentId(e.target.value)} style={inputStyle}>
-                  <option value="">-- 선택하세요 --</option>
-                  {students.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}{s.grade ? ` (${s.grade}${s.class_name ? ' · ' + s.class_name : ''})` : ''}
-                    </option>
-                  ))}
-                </select>
-                {students.length === 0 && (
-                  <p style={{ fontSize:12, color:'#94a3b8', marginTop:4 }}>
-                    등록된 재원생이 없습니다. 원장 선생님께 학생 등록을 요청하세요.
-                  </p>
-                )}
-              </Field>
+              <>
+                <Field label="학년" icon="fa-graduation-cap">
+                  <select value={grade} onChange={e=>setGrade(e.target.value)} style={inputStyle}>
+                    <option value="">선택 (선택사항)</option>
+                    {['중1','중2','중3','고1','고2','고3'].map(g=>(
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="반" icon="fa-chalkboard">
+                  <input type="text" value={className} onChange={e=>setClassName(e.target.value)}
+                    placeholder="예: 수학심화반 (선택사항)" style={inputStyle} />
+                </Field>
+                <Field label="학교" icon="fa-school">
+                  <input type="text" value={schoolName} onChange={e=>setSchoolName(e.target.value)}
+                    placeholder="학교명 (선택사항)" style={inputStyle} />
+                </Field>
+                <Field label="연락처" icon="fa-phone">
+                  <input type="text" value={phone} onChange={e=>setPhone(e.target.value)}
+                    placeholder="연락처 (선택사항)" style={inputStyle} />
+                </Field>
+              </>
             )}
 
             {error   && <ErrorMsg   msg={error} />}

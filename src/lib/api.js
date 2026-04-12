@@ -177,6 +177,39 @@ export async function addComment(payload) {
   if (error) throw error;
   return data;
 }
+export async function updateAttendance(id, payload) {
+  const { data, error } = await supabase.from('attendances').update(payload).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteAttendance(id) {
+  const { error } = await supabase.from('attendances').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ==================== 담당 강사 다중 배정 ====================
+export async function getStudentTeachers(studentId) {
+  const { data, error } = await supabase
+    .from('student_teachers')
+    .select('id, teacher_id, teachers(id, name, title)')
+    .eq('student_id', studentId)
+    .order('created_at');
+  if (error) throw error;
+  return data;
+}
+export async function addStudentTeacher(studentId, teacherId) {
+  const { data, error } = await supabase
+    .from('student_teachers')
+    .insert({ student_id: studentId, teacher_id: teacherId })
+    .select('id, teacher_id, teachers(id, name, title)')
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function removeStudentTeacher(id) {
+  const { error } = await supabase.from('student_teachers').delete().eq('id', id);
+  if (error) throw error;
+}
 
 // ==================== 강사 ====================
 export async function getTeachers() {
@@ -214,6 +247,32 @@ export async function bulkCreateHomework(studentIds, payload) {
   return data;
 }
 
+// ==================== 선생님 역할: 담당 학생 조회 ====================
+export async function getTeacherByProfileId(profileId) {
+  const { data } = await supabase
+    .from('teachers')
+    .select('*')
+    .eq('profile_id', profileId)
+    .maybeSingle();
+  return data ?? null;
+}
+export async function getStudentsForTeacher(teacherRecordId) {
+  const { data: links, error } = await supabase
+    .from('student_teachers')
+    .select('student_id')
+    .eq('teacher_id', teacherRecordId);
+  if (error) throw error;
+  const ids = (links ?? []).map(l => l.student_id);
+  if (!ids.length) return [];
+  const { data, error: err2 } = await supabase
+    .from('students')
+    .select('*, teachers(name, title)')
+    .in('id', ids)
+    .order('name');
+  if (err2) throw err2;
+  return data;
+}
+
 // ==================== 학생 본인 조회 ====================
 export async function getStudentByProfileId(profileId) {
   const { data, error } = await supabase
@@ -240,6 +299,14 @@ export async function getTeacherPermissions() {
   if (error) throw error;
   return data; // [{ teacher_id, can_view_personal_info, can_view_grades, can_view_report }]
 }
+export async function getTeacherPermissionById(teacherId) {
+  const { data } = await supabase
+    .from('teacher_permissions')
+    .select('*')
+    .eq('teacher_id', teacherId)
+    .maybeSingle();
+  return data ?? null;
+}
 export async function upsertTeacherPermission(teacherId, payload) {
   const { data, error } = await supabase
     .from('teacher_permissions')
@@ -248,6 +315,33 @@ export async function upsertTeacherPermission(teacherId, payload) {
     .single();
   if (error) throw error;
   return data;
+}
+
+// ==================== 교사 소통 노트 ====================
+// Supabase에 teacher_notes 테이블 필요:
+// create table teacher_notes (
+//   id uuid default gen_random_uuid() primary key,
+//   student_id uuid references students(id) on delete cascade not null,
+//   author_name text not null, content text not null,
+//   created_at timestamptz default now()
+// );
+export async function getTeacherNotes(studentId) {
+  const { data, error } = await supabase
+    .from('teacher_notes')
+    .select('*')
+    .eq('student_id', studentId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+export async function addTeacherNote(payload) {
+  const { data, error } = await supabase.from('teacher_notes').insert(payload).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteTeacherNote(id) {
+  const { error } = await supabase.from('teacher_notes').delete().eq('id', id);
+  if (error) throw error;
 }
 
 // ==================== 수행 관리 ====================
@@ -261,9 +355,24 @@ export async function createPerformance(payload) {
   if (error) throw error;
   return data;
 }
+export async function updatePerformance(id, payload) {
+  const { data, error } = await supabase.from('performances').update(payload).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
 export async function deletePerformance(id) {
   const { error } = await supabase.from('performances').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ==================== 쪽지 (관리자 전체 열람) ====================
+export async function getAllMessages() {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data;
 }
 
 // ==================== 쪽지 ====================
@@ -365,6 +474,64 @@ export async function getAttendanceStats(studentId) {
   const { data, error } = await supabase.from('attendances').select('att_date,status,study_minutes').eq('student_id', studentId).order('att_date');
   if (error) throw error;
   return data;
+}
+
+// ==================== 계정 승인 ====================
+export async function getPendingProfiles() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, role, created_at')
+    .eq('approved', false)
+    .order('created_at');
+  if (error) throw error;
+  return data ?? [];
+}
+export async function approveProfile(id) {
+  // profiles + auth 메타데이터 조회
+  const { data: prof, error: fetchErr } = await supabase
+    .from('profiles').select('id, name, role').eq('id', id).single();
+  if (fetchErr) throw fetchErr;
+
+  const { error } = await supabase.from('profiles').update({ approved: true }).eq('id', id);
+  if (error) throw error;
+
+  // 강사/조교 → teachers 테이블 자동 등록
+  if (prof.role === 'teacher' || prof.role === 'assistant') {
+    const { data: existing } = await supabase
+      .from('teachers').select('id').eq('profile_id', id).maybeSingle();
+    if (!existing) {
+      const { error: insertErr } = await supabase.from('teachers').insert({
+        name: prof.name, role: prof.role, profile_id: id,
+      });
+      if (insertErr) throw new Error('teachers 등록 실패: ' + insertErr.message);
+    }
+  }
+
+  // 학생 → students 테이블 자동 등록 (profiles에 저장된 학생 정보 활용)
+  if (prof.role === 'student') {
+    const { data: existing } = await supabase
+      .from('students').select('id').eq('profile_id', id).maybeSingle();
+    if (!existing) {
+      const { data: fullProf } = await supabase
+        .from('profiles')
+        .select('name, grade, class_name, school_name, phone')
+        .eq('id', id).single();
+      const { error: insertErr } = await supabase.from('students').insert({
+        name:        fullProf?.name       ?? prof.name,
+        grade:       fullProf?.grade      ?? null,
+        class_name:  fullProf?.class_name ?? null,
+        school_name: fullProf?.school_name ?? null,
+        phone:       fullProf?.phone      ?? null,
+        profile_id:  id,
+        status:      '재원중',
+      });
+      if (insertErr) throw new Error('students 등록 실패: ' + insertErr.message);
+    }
+  }
+}
+export async function rejectProfile(id) {
+  const { error } = await supabase.from('profiles').delete().eq('id', id);
+  if (error) throw error;
 }
 
 function getMondayOfWeek(date) {

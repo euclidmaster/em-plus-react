@@ -62,6 +62,7 @@ body {
   transition: var(--transition);
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 
 .sidebar::-webkit-scrollbar { width: 4px; }
@@ -71,6 +72,35 @@ body {
 .sidebar-header {
   padding: 20px 20px 16px;
   border-bottom: 1px solid #1e293b;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-tab-btn {
+  position: absolute;
+  top: 50%;
+  right: -16px;
+  transform: translateY(-50%);
+  z-index: 101;
+  width: 16px;
+  height: 48px;
+  background: #4361ee;
+  border: none;
+  border-radius: 0 8px 8px 0;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  box-shadow: 3px 0 10px rgba(67,97,238,0.5);
+  transition: var(--transition);
+}
+.sidebar-tab-btn:hover {
+  width: 22px;
+  background: #3651d4;
+  box-shadow: 4px 0 14px rgba(67,97,238,0.7);
 }
 
 .logo-area {
@@ -113,17 +143,45 @@ body {
 .admin-role { color: #f4a261; }
 
 /* Sidebar Nav */
-.sidebar-nav { padding: 12px 0; flex: 1; }
+.sidebar-nav { padding: 12px 0; flex: 1; overflow-y: auto; overflow-x: hidden; }
 
-.nav-group { margin-bottom: 4px; }
+.nav-group { margin-bottom: 2px; }
 
-.nav-group-label {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 10px; font-weight: 700;
-  color: #475569; letter-spacing: 1px;
-  text-transform: uppercase;
-  padding: 12px 20px 6px;
+/* 아코디언 그룹 헤더 버튼 */
+.nav-group-toggle {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px;
+  background: none; border: none; cursor: pointer;
+  color: #64748b;
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 0.5px;
+  transition: var(--transition);
 }
+.nav-group-toggle:hover { background: #1e293b; color: #94a3b8; }
+.nav-group-toggle.has-active { color: #818cf8; }
+
+.nav-group-toggle-left { display: flex; align-items: center; gap: 8px; }
+.nav-group-toggle-left i { font-size: 13px; width: 16px; text-align: center; }
+.nav-group-toggle-label { font-size: 12px; }
+.nav-group-arrow { font-size: 10px; opacity: 0.6; }
+
+/* 아코디언 하위 메뉴 */
+.nav-group-items {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+.nav-group-items.open { max-height: 400px; }
+
+/* 미니 사이드바에서 그룹 토글 */
+.sidebar-hidden .nav-group-toggle {
+  justify-content: center;
+  padding: 10px 0;
+}
+.sidebar-hidden .nav-group-toggle-label,
+.sidebar-hidden .nav-group-arrow { display: none; }
+.sidebar-hidden .nav-group-items.open { max-height: 400px; }
 
 .admin-only-badge {
   background: #7c3aed22;
@@ -1587,11 +1645,48 @@ body {
   .att-setup-grid { grid-template-columns: 1fr; }
 }
 
+/* 오버레이는 모바일에서만 */
+.mobile-only { display: none; }
+
+/* PC 미니 사이드바 */
+.sidebar-hidden .sidebar {
+  width: 60px;
+}
+.sidebar-hidden .main-content {
+  margin-left: 60px;
+}
+.sidebar-hidden .logo-text,
+.sidebar-hidden .user-info,
+.sidebar-hidden .nav-group-label,
+.sidebar-hidden .nav-item span,
+.sidebar-hidden .sidebar-logout-label {
+  display: none;
+}
+.sidebar-hidden .logo-area { justify-content: center; }
+.sidebar-hidden .sidebar-header { padding: 20px 10px 16px; }
+.sidebar-hidden .sidebar-user { padding: 16px 10px; justify-content: center; }
+.sidebar-hidden .nav-item {
+  justify-content: center;
+  padding: 12px 0;
+  border-left: none;
+  border-radius: 8px;
+  margin: 2px 6px;
+}
+.sidebar-hidden .nav-item i { width: auto; font-size: 16px; }
+.sidebar-hidden .nav-item.active { border-left: none; }
+.sidebar-hidden .sidebar-signout {
+  justify-content: center;
+  padding: 10px 0;
+}
+.sidebar-hidden .sidebar-signout i { margin: 0; }
+
 @media (max-width: 900px) {
   :root { --sidebar-w: 0px; }
   .sidebar { transform: translateX(-260px); width: 260px; }
   .sidebar.open { transform: translateX(0); }
+  .sidebar-hidden .sidebar { transform: translateX(-260px); }
   .main-content { margin-left: 0; }
+  .mobile-only { display: block; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
   .site-map-branches { grid-template-columns: 1fr; }
   .dashboard-bottom { grid-template-columns: 1fr; }

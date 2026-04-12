@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
-import { getStudents, getHomeworks, createHomework, toggleHomework, deleteHomework, bulkCreateHomework } from '../lib/api.js';
+import { getHomeworks, createHomework, toggleHomework, deleteHomework, bulkCreateHomework } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
+import { useStudentList } from '../hooks/useStudentList.js';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
 const GRADE_OPTIONS = ['중1','중2','중3','고1','고2','고3'];
 
 export default function HomeworkPage() {
   const [tab, setTab] = useState('개인별'); // '개인별' | '반별'
+  const { students } = useStudentList();
   const showToast = useToast();
 
   return (
@@ -30,27 +32,23 @@ export default function HomeworkPage() {
       </div>
 
       {tab === '개인별'
-        ? <IndividualHomework showToast={showToast} />
-        : <ClassHomework showToast={showToast} />
+        ? <IndividualHomework showToast={showToast} students={students} />
+        : <ClassHomework showToast={showToast} students={students} />
       }
     </div>
   );
 }
 
 /* ── 개인별 ─────────────────────────────────────────── */
-function IndividualHomework({ showToast }) {
-  const [students, setStudents]     = useState([]);
+function IndividualHomework({ showToast, students }) {
   const [selectedId, setSelectedId] = useState(null);
   const [homeworks, setHomeworks]   = useState([]);
   const [showModal, setShowModal]   = useState(false);
   const [form, setForm] = useState({ due_date:'', subject:'국어', material:'', hw_range:'' });
 
   useEffect(() => {
-    getStudents().then(s => {
-      setStudents(s);
-      if (s.length) { setSelectedId(s[0].id); loadHw(s[0].id); }
-    }).catch(console.error);
-  }, []);
+    if (students.length && selectedId === null) { setSelectedId(students[0].id); loadHw(students[0].id); }
+  }, [students]);
 
   async function loadHw(id) {
     try { setHomeworks(await getHomeworks(id)); }
@@ -138,17 +136,12 @@ function IndividualHomework({ showToast }) {
 }
 
 /* ── 반별 ────────────────────────────────────────────── */
-function ClassHomework({ showToast }) {
-  const [allStudents, setAllStudents]   = useState([]);
+function ClassHomework({ showToast, students: allStudents }) {
   const [gradeFilter, setGradeFilter]   = useState('');
   const [classFilter, setClassFilter]   = useState('');
   const [classStudents, setClassStudents] = useState([]);
   const [showModal, setShowModal]       = useState(false);
   const [form, setForm] = useState({ due_date:'', subject:'국어', material:'', hw_range:'' });
-
-  useEffect(() => {
-    getStudents().then(setAllStudents).catch(console.error);
-  }, []);
 
   // 선택된 학년의 반 목록
   const availableClasses = (() => {

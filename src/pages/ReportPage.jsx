@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react';
-import { getStudents, getGradeStats, getHomeworks } from '../lib/api.js';
+import { getGradeStats, getHomeworks } from '../lib/api.js';
 import StudentSelect from '../components/common/StudentSelect.jsx';
+import { useStudentList } from '../hooks/useStudentList.js';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend);
 
 export default function ReportPage() {
-  const [students, setStudents] = useState([]);
+  const { students } = useStudentList();
   const [selectedId, setSelectedId] = useState(null);
   const [gradeData, setGradeData]   = useState([]);
   const [hwData, setHwData]         = useState([]);
 
   useEffect(() => {
-    getStudents().then(s => { setStudents(s); if (s.length) { setSelectedId(s[0].id); } }).catch(console.error);
-  }, []);
+    if (students.length && selectedId === null) setSelectedId(students[0].id);
+  }, [students]);
 
   useEffect(() => {
     if (!selectedId) return;
