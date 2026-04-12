@@ -497,13 +497,25 @@ export async function approveProfile(id) {
 
   // 강사/조교 → teachers 테이블 자동 등록
   if (prof.role === 'teacher' || prof.role === 'assistant') {
-    const { data: existing } = await supabase
+    // 1) 이미 profile_id로 연결된 레코드 확인
+    const { data: existingByProfile } = await supabase
       .from('teachers').select('id').eq('profile_id', id).maybeSingle();
-    if (!existing) {
-      const { error: insertErr } = await supabase.from('teachers').insert({
-        name: prof.name, role: prof.role, profile_id: id,
-      });
-      if (insertErr) throw new Error('teachers 등록 실패: ' + insertErr.message);
+    if (!existingByProfile) {
+      // 2) 수동으로 만들어진 동명 레코드(profile_id null)가 있으면 profile_id만 업데이트
+      const { data: existingByName } = await supabase
+        .from('teachers').select('id').eq('name', prof.name).is('profile_id', null).maybeSingle();
+      if (existingByName) {
+        const { error: updateErr } = await supabase
+          .from('teachers').update({ profile_id: id, role: prof.role })
+          .eq('id', existingByName.id);
+        if (updateErr) throw new Error('teachers 연결 실패: ' + updateErr.message);
+      } else {
+        // 3) 없으면 새로 생성
+        const { error: insertErr } = await supabase.from('teachers').insert({
+          name: prof.name, role: prof.role, profile_id: id,
+        });
+        if (insertErr) throw new Error('teachers 등록 실패: ' + insertErr.message);
+      }
     }
   }
 
