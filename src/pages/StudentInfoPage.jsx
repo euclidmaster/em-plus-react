@@ -6,7 +6,7 @@ import {
   getUnlinkedStudentProfiles, linkStudentAccount,
   getStudentTeachers, addStudentTeacher, removeStudentTeacher,
   getTeacherNotes, addTeacherNote, deleteTeacherNote,
-  sendMessage, getStaffProfiles,
+  sendMessage,
 } from '../lib/api.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -58,15 +58,15 @@ export default function StudentInfoPage() {
     setSelectedRecipients(new Set());
     setSearchParams({ id });
     try {
-      const [d, assigned, noteList, staffProfiles] = await Promise.all([
-        getStudent(id), getStudentTeachers(id), getTeacherNotes(id), getStaffProfiles(),
+      const [d, assigned, noteList] = await Promise.all([
+        getStudent(id), getStudentTeachers(id), getTeacherNotes(id),
       ]);
       setDetail(d);
       setAssignedTeachers(assigned);
       setNotes(noteList);
       setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', status: d.status });
 
-      // 수신자 그룹 빌드
+      // 담당 선생님 profile_id 목록
       const assignedProfileIds = new Set(
         assigned.map(a => a.teachers?.profile_id).filter(Boolean)
       );
@@ -82,20 +82,19 @@ export default function StudentInfoPage() {
         setUnlinkedProfiles(unlinked);
       }
 
-      // 담당 선생님 / 전체 선생님 / 원장·관리자 (모두 본인 제외)
-      const assignedGroup = [], teachersGroup = [], adminsGroup = [];
-      staffProfiles.forEach(p => {
-        if (p.id === profile?.id) return;
-        if (p.role === 'admin' || p.role === 'assistant') {
-          adminsGroup.push({ id: p.id, name: p.name, role: p.role });
-        } else if (assignedProfileIds.has(p.id)) {
-          assignedGroup.push({ id: p.id, name: p.name });
+      // teachers 테이블에서 profile_id 있는 선생님 — 본인 제외
+      // (teachers 테이블은 RLS 없이 접근 가능)
+      const assignedGroup = [], teachersGroup = [];
+      teachers.forEach(t => {
+        if (!t.profile_id || t.profile_id === profile?.id) return;
+        if (assignedProfileIds.has(t.profile_id)) {
+          assignedGroup.push({ id: t.profile_id, name: t.name });
         } else {
-          teachersGroup.push({ id: p.id, name: p.name });
+          teachersGroup.push({ id: t.profile_id, name: t.name });
         }
       });
 
-      setRecipientGroups({ student: studentGroup, assigned: assignedGroup, teachers: teachersGroup, admins: adminsGroup });
+      setRecipientGroups({ student: studentGroup, assigned: assignedGroup, teachers: teachersGroup, admins: [] });
     } catch { showToast('학생 정보 로드 실패', 'error'); }
   }
 
