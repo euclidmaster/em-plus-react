@@ -16,11 +16,11 @@ export async function getStudentLinkedProfile(profileId) {
   const { data } = await supabase.from('profiles').select('id, name, role').eq('id', profileId).single();
   return data ?? null;
 }
-export async function getAdminProfiles() {
+export async function getStaffProfiles() {
   const { data } = await supabase
     .from('profiles')
     .select('id, name, role')
-    .in('role', ['admin', 'assistant'])
+    .in('role', ['admin', 'assistant', 'teacher'])
     .eq('approved', true);
   return data ?? [];
 }

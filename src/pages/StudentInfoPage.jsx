@@ -6,7 +6,7 @@ import {
   getUnlinkedStudentProfiles, linkStudentAccount,
   getStudentTeachers, addStudentTeacher, removeStudentTeacher,
   getTeacherNotes, addTeacherNote, deleteTeacherNote,
-  sendMessage, getAdminProfiles,
+  sendMessage, getStaffProfiles,
 } from '../lib/api.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -58,8 +58,8 @@ export default function StudentInfoPage() {
     setMsgRecipient('');
     setSearchParams({ id });
     try {
-      const [d, assigned, noteList, admins] = await Promise.all([
-        getStudent(id), getStudentTeachers(id), getTeacherNotes(id), getAdminProfiles(),
+      const [d, assigned, noteList, staffProfiles] = await Promise.all([
+        getStudent(id), getStudentTeachers(id), getTeacherNotes(id), getStaffProfiles(),
       ]);
       setDetail(d);
       setAssignedTeachers(assigned);
@@ -77,17 +77,11 @@ export default function StudentInfoPage() {
         const unlinked = await getUnlinkedStudentProfiles();
         setUnlinkedProfiles(unlinked);
       }
-      // 담당 선생님 (본인 제외, profile_id 있는 경우)
-      assigned.forEach(a => {
-        const t = a.teachers;
-        if (t?.profile_id && t.profile_id !== profile?.id) {
-          opts.push({ id: t.profile_id, name: t.name, label: `${t.name} 선생님` });
-        }
-      });
-      // 원장 / 관리자 (본인 제외)
-      admins.forEach(a => {
-        if (a.id !== profile?.id) {
-          opts.push({ id: a.id, name: a.name, label: `${a.name} (${a.role === 'admin' ? '원장' : '관리자'})` });
+      // 스태프(선생님·원장·관리자) — 본인 제외
+      const roleLabel = { admin: '원장', assistant: '관리자', teacher: '선생님' };
+      staffProfiles.forEach(p => {
+        if (p.id !== profile?.id) {
+          opts.push({ id: p.id, name: p.name, label: `${p.name} (${roleLabel[p.role] ?? p.role})` });
         }
       });
       setRecipientOptions(opts);
