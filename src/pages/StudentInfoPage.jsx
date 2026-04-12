@@ -30,8 +30,8 @@ export default function StudentInfoPage() {
   const [addTeacherId, setAddTeacherId]     = useState('');
   const [notes, setNotes]                   = useState([]);
   const [noteInput, setNoteInput]           = useState('');
-  const [msgRecipient, setMsgRecipient]     = useState('');   // profile_id or '' (shared)
-  const [recipientOptions, setRecipientOptions] = useState([]); // [{ id, name, label }]
+  const [selectedRecipients, setSelectedRecipients] = useState(new Set());
+  const [recipientGroups, setRecipientGroups] = useState({ student:[], assigned:[], teachers:[], admins:[] });
   const showToast = useToast();
   const { profile } = useAuth();
 
@@ -55,7 +55,7 @@ export default function StudentInfoPage() {
     setAddTeacherId('');
     setNotes([]);
     setNoteInput('');
-    setMsgRecipient('');
+    setSelectedRecipients(new Set());
     setSearchParams({ id });
     try {
       const [d, assigned, noteList, staffProfiles] = await Promise.all([
@@ -66,48 +66,80 @@ export default function StudentInfoPage() {
       setNotes(noteList);
       setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', status: d.status });
 
-      // 수신자 옵션 빌드
-      const opts = [];
-      // 학생 (계정 연결된 경우)
+      // 수신자 그룹 빌드
+      const assignedProfileIds = new Set(
+        assigned.map(a => a.teachers?.profile_id).filter(Boolean)
+      );
+
+      // 학생
+      const studentGroup = [];
       if (d.profile_id) {
         const prof = await getStudentLinkedProfile(d.profile_id);
         setLinkedProfile(prof);
-        if (prof) opts.push({ id: prof.id, name: prof.name, label: `${prof.name} (학생)` });
+        if (prof) studentGroup.push({ id: prof.id, name: prof.name });
       } else {
         const unlinked = await getUnlinkedStudentProfiles();
         setUnlinkedProfiles(unlinked);
       }
-      // 스태프(선생님·원장·관리자) — 본인 제외
-      const roleLabel = { admin: '원장', assistant: '관리자', teacher: '선생님' };
+
+      // 담당 선생님 / 전체 선생님 / 원장·관리자 (모두 본인 제외)
+      const assignedGroup = [], teachersGroup = [], adminsGroup = [];
       staffProfiles.forEach(p => {
-        if (p.id !== profile?.id) {
-          opts.push({ id: p.id, name: p.name, label: `${p.name} (${roleLabel[p.role] ?? p.role})` });
+        if (p.id === profile?.id) return;
+        if (p.role === 'admin' || p.role === 'assistant') {
+          adminsGroup.push({ id: p.id, name: p.name, role: p.role });
+        } else if (assignedProfileIds.has(p.id)) {
+          assignedGroup.push({ id: p.id, name: p.name });
+        } else {
+          teachersGroup.push({ id: p.id, name: p.name });
         }
       });
-      setRecipientOptions(opts);
+
+      setRecipientGroups({ student: studentGroup, assigned: assignedGroup, teachers: teachersGroup, admins: adminsGroup });
     } catch { showToast('학생 정보 로드 실패', 'error'); }
+  }
+
+  function toggleRecipient(id) {
+    setSelectedRecipients(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleGroup(members) {
+    const ids = members.map(m => m.id);
+    const allChecked = ids.every(id => selectedRecipients.has(id));
+    setSelectedRecipients(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => allChecked ? next.delete(id) : next.add(id));
+      return next;
+    });
   }
 
   async function submitNote() {
     const text = noteInput.trim();
     if (!text || !selectedId) return;
     try {
-      if (msgRecipient) {
-        // 특정 대상에게 직접 메시지 전송
-        const to = recipientOptions.find(o => o.id === msgRecipient);
-        if (!to) { showToast('수신자를 찾을 수 없습니다.', 'error'); return; }
+      if (selectedRecipients.size > 0) {
         if (!profile?.id) { showToast('로그인 정보가 없습니다.', 'error'); return; }
-        await sendMessage({
+        const allMembers = [
+          ...recipientGroups.student,
+          ...recipientGroups.assigned,
+          ...recipientGroups.teachers,
+          ...recipientGroups.admins,
+        ];
+        const targets = allMembers.filter(m => selectedRecipients.has(m.id));
+        await Promise.all(targets.map(to => sendMessage({
           from_id:   profile.id,
           to_id:     to.id,
           from_name: profile.name ?? '선생님',
           to_name:   to.name,
           content:   text,
-        });
-        showToast(`${to.name}에게 메시지를 보냈습니다.`);
+        })));
+        showToast(`${targets.map(t=>t.name).join(', ')}에게 메시지를 보냈습니다.`);
         setNoteInput('');
       } else {
-        // 공유 메모 등록
         const row = await addTeacherNote({ student_id: selectedId, author_name: profile?.name ?? '선생님', content: text });
         setNotes(prev => [...prev, row]);
         setNoteInput('');
@@ -460,44 +492,85 @@ export default function StudentInfoPage() {
                 </div>
             }
 
-            {/* 수신자 선택 + 메시지 입력 */}
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ fontSize:12, fontWeight:600, color:'#64748b', flexShrink:0 }}>
-                  <i className="fas fa-paper-plane" style={{ marginRight:4 }}></i>받는 사람
-                </span>
-                <select
-                  value={msgRecipient}
-                  onChange={e => setMsgRecipient(e.target.value)}
-                  style={{ flex:1, padding:'7px 10px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13, background:'#fff', cursor:'pointer' }}
-                >
-                  <option value="">공유 메모 (담당 선생님 전체)</option>
-                  {recipientOptions.length > 0 && (
-                    <optgroup label="──────────────">
-                      {recipientOptions.map(o => (
-                        <option key={o.id} value={o.id}>{o.label}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
+            {/* 수신자 선택 */}
+            <div style={{ border:'1.5px solid #e2e8f0', borderRadius:10, overflow:'hidden', marginBottom:8 }}>
+              <div style={{ padding:'8px 12px', background:'#f8fafc', borderBottom:'1px solid #e2e8f0', fontSize:12, fontWeight:700, color:'#64748b', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span><i className="fas fa-user-check" style={{ marginRight:6 }}></i>받는 사람</span>
+                {selectedRecipients.size > 0 && (
+                  <span style={{ fontSize:11, background:'#4361ee', color:'#fff', borderRadius:10, padding:'2px 8px' }}>
+                    {selectedRecipients.size}명 선택
+                  </span>
+                )}
               </div>
-              <div style={{ display:'flex', gap:8 }}>
-                <input
-                  value={noteInput}
-                  onChange={e => setNoteInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && submitNote()}
-                  placeholder={msgRecipient
-                    ? `${recipientOptions.find(o=>o.id===msgRecipient)?.name ?? ''}에게 메시지 입력... (Enter로 전송)`
-                    : '공유 메모 입력... (Enter로 등록)'}
-                  style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}
-                />
-                <button
-                  onClick={submitNote}
-                  style={{ padding:'9px 16px', background: msgRecipient ? '#7209b7' : '#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600, flexShrink:0 }}
-                >
-                  <i className="fas fa-paper-plane"></i>
-                </button>
-              </div>
+
+              {[
+                { key:'student',  label:'학생',          color:'#22c55e', members: recipientGroups.student },
+                { key:'assigned', label:'담당 선생님',    color:'#4361ee', members: recipientGroups.assigned },
+                { key:'teachers', label:'학원 전체 선생님', color:'#7209b7', members: recipientGroups.teachers },
+                { key:'admins',   label:'원장·관리자',    color:'#f59e0b', members: recipientGroups.admins },
+              ].map(({ key, label, color, members }) => members.length === 0 ? null : (
+                <div key={key} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                  {/* 그룹 헤더 — 전체 선택 */}
+                  <div
+                    onClick={() => toggleGroup(members)}
+                    style={{ padding:'6px 12px', display:'flex', alignItems:'center', gap:8, cursor:'pointer', background: members.every(m=>selectedRecipients.has(m.id)) ? color+'11' : '#fff' }}
+                  >
+                    <input
+                      type="checkbox"
+                      readOnly
+                      checked={members.every(m => selectedRecipients.has(m.id))}
+                      style={{ accentColor: color, cursor:'pointer' }}
+                    />
+                    <span style={{ fontSize:11, fontWeight:700, color, letterSpacing:'0.04em' }}>{label}</span>
+                    <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>{members.length}명</span>
+                  </div>
+                  {/* 개별 항목 */}
+                  {members.map(m => (
+                    <div
+                      key={m.id}
+                      onClick={() => toggleRecipient(m.id)}
+                      style={{ padding:'5px 12px 5px 28px', display:'flex', alignItems:'center', gap:8, cursor:'pointer', background: selectedRecipients.has(m.id) ? color+'0d' : '#fff' }}
+                    >
+                      <input
+                        type="checkbox"
+                        readOnly
+                        checked={selectedRecipients.has(m.id)}
+                        style={{ accentColor: color, cursor:'pointer' }}
+                      />
+                      <span style={{ fontSize:13, color:'#1e293b' }}>{m.name}</span>
+                      {m.role && (
+                        <span style={{ fontSize:11, color:'#94a3b8' }}>
+                          {m.role === 'admin' ? '원장' : '관리자'}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {Object.values(recipientGroups).every(g => g.length === 0) && (
+                <div style={{ padding:'12px', fontSize:12, color:'#94a3b8', textAlign:'center' }}>
+                  수신 가능한 계정이 없습니다.
+                </div>
+              )}
+            </div>
+
+            {/* 메시지 입력 */}
+            <div style={{ display:'flex', gap:8 }}>
+              <input
+                value={noteInput}
+                onChange={e => setNoteInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && submitNote()}
+                placeholder={selectedRecipients.size > 0 ? '메시지 입력... (Enter로 전송)' : '공유 메모 입력... (Enter로 등록)'}
+                style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}
+              />
+              <button
+                onClick={submitNote}
+                style={{ padding:'9px 16px', background: selectedRecipients.size > 0 ? '#7209b7' : '#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600, flexShrink:0 }}
+              >
+                <i className="fas fa-paper-plane"></i>
+                {selectedRecipients.size > 0 && <span style={{ marginLeft:6 }}>{selectedRecipients.size}명 전송</span>}
+              </button>
             </div>
           </div>
 
