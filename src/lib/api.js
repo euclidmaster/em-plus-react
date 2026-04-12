@@ -199,7 +199,7 @@ export async function deleteAttendance(id) {
 export async function getStudentTeachers(studentId) {
   const { data, error } = await supabase
     .from('student_teachers')
-    .select('id, teacher_id, teachers(id, name, title)')
+    .select('id, teacher_id, teachers(id, name, title, profile_id)')
     .eq('student_id', studentId)
     .order('created_at');
   if (error) throw error;
