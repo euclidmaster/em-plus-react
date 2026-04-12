@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createStudent, getTeachers } from '../lib/api.js';
+import { createStudent, getTeachers, addStudentTeacher } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -93,7 +93,11 @@ export default function StudentListPage() {
   async function submit() {
     if (!form.name.trim()) { showToast('이름을 입력하세요.', 'error'); return; }
     try {
-      await createStudent({ ...form, teacher_id: form.teacher_id || null });
+      const student = await createStudent({ ...form, teacher_id: form.teacher_id || null });
+      // 담당강사 선택 시 student_teachers 다대다 테이블에도 삽입 (선생님 학생 필터링 대응)
+      if (form.teacher_id && student?.id) {
+        await addStudentTeacher(student.id, form.teacher_id).catch(() => {});
+      }
       showToast(`${form.name} 학생이 등록되었습니다.`);
       setShowModal(false);
       setForm({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });

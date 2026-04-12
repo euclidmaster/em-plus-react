@@ -12,7 +12,8 @@ export default function StudentChatPage() {
   const bottomRef               = useRef(null);
   const showToast = useToast();
 
-  const teacher = student?.teachers ?? null;
+  // students.teacher_id FK 또는 student_teachers 다대다 테이블 중 하나에서 선생님 확인
+  const teacher = student?.teachers ?? student?.student_teachers?.[0]?.teachers ?? null;
 
   useEffect(() => {
     if (student && teacher?.profile_id && profile?.id) {

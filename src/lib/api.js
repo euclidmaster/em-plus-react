@@ -256,28 +256,56 @@ export async function getTeacherByProfileId(profileId) {
     .maybeSingle();
   return data ?? null;
 }
+export async function getTeacherByName(name) {
+  const { data } = await supabase
+    .from('teachers')
+    .select('*')
+    .eq('name', name)
+    .maybeSingle();
+  return data ?? null;
+}
+export async function linkTeacherProfile(teacherId, profileId) {
+  const { error } = await supabase
+    .from('teachers')
+    .update({ profile_id: profileId })
+    .eq('id', teacherId);
+  if (error) throw error;
+}
 export async function getStudentsForTeacher(teacherRecordId) {
-  const { data: links, error } = await supabase
+  // student_teachers 다대다 테이블에서 담당 학생 ID 수집
+  const { data: links, error: linkErr } = await supabase
     .from('student_teachers')
     .select('student_id')
     .eq('teacher_id', teacherRecordId);
-  if (error) throw error;
-  const ids = (links ?? []).map(l => l.student_id);
-  if (!ids.length) return [];
-  const { data, error: err2 } = await supabase
+  if (linkErr) console.warn('[getStudentsForTeacher] student_teachers 조회 오류:', linkErr);
+  const junctionIds = (links ?? []).map(l => l.student_id);
+  console.log('[getStudentsForTeacher] teacherRecordId:', teacherRecordId, '| junction IDs:', junctionIds);
+
+  // students.teacher_id(단일 배정) + junction 테이블 배정 모두 포함
+  let query = supabase
     .from('students')
-    .select('*, teachers(name, title)')
-    .in('id', ids)
-    .order('name');
-  if (err2) throw err2;
-  return data;
+    .select('*, teachers(name, title)');
+
+  if (junctionIds.length > 0) {
+    query = query.or(`teacher_id.eq.${teacherRecordId},id.in.(${junctionIds.join(',')})`);
+  } else {
+    query = query.eq('teacher_id', teacherRecordId);
+  }
+
+  const { data, error } = await query.order('name');
+  if (error) {
+    console.error('[getStudentsForTeacher] students 조회 오류:', error);
+    throw error;
+  }
+  console.log('[getStudentsForTeacher] 조회된 학생:', data?.length, data);
+  return data ?? [];
 }
 
 // ==================== 학생 본인 조회 ====================
 export async function getStudentByProfileId(profileId) {
   const { data, error } = await supabase
     .from('students')
-    .select('*, teachers(id, name, title, profile_id)')
+    .select('*, teachers(id, name, title, profile_id), student_teachers(id, teacher_id, teachers(id, name, title, profile_id))')
     .eq('profile_id', profileId)
     .single();
   if (error) throw error;
