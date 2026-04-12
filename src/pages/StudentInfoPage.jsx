@@ -6,6 +6,7 @@ import {
   getUnlinkedStudentProfiles, linkStudentAccount,
   getStudentTeachers, addStudentTeacher, removeStudentTeacher,
   getTeacherNotes, addTeacherNote, deleteTeacherNote,
+  sendMessage, getAdminProfiles,
 } from '../lib/api.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -29,6 +30,8 @@ export default function StudentInfoPage() {
   const [addTeacherId, setAddTeacherId]     = useState('');
   const [notes, setNotes]                   = useState([]);
   const [noteInput, setNoteInput]           = useState('');
+  const [msgRecipient, setMsgRecipient]     = useState('');   // profile_id or '' (shared)
+  const [recipientOptions, setRecipientOptions] = useState([]); // [{ id, name, label }]
   const showToast = useToast();
   const { profile } = useAuth();
 
@@ -52,22 +55,42 @@ export default function StudentInfoPage() {
     setAddTeacherId('');
     setNotes([]);
     setNoteInput('');
+    setMsgRecipient('');
     setSearchParams({ id });
     try {
-      const [d, assigned, noteList] = await Promise.all([
-        getStudent(id), getStudentTeachers(id), getTeacherNotes(id),
+      const [d, assigned, noteList, admins] = await Promise.all([
+        getStudent(id), getStudentTeachers(id), getTeacherNotes(id), getAdminProfiles(),
       ]);
       setDetail(d);
       setAssignedTeachers(assigned);
       setNotes(noteList);
       setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', status: d.status });
+
+      // 수신자 옵션 빌드
+      const opts = [];
+      // 학생 (계정 연결된 경우)
       if (d.profile_id) {
         const prof = await getStudentLinkedProfile(d.profile_id);
         setLinkedProfile(prof);
+        if (prof) opts.push({ id: prof.id, name: prof.name, label: `${prof.name} (학생)` });
       } else {
         const unlinked = await getUnlinkedStudentProfiles();
         setUnlinkedProfiles(unlinked);
       }
+      // 담당 선생님 (본인 제외, profile_id 있는 경우)
+      assigned.forEach(a => {
+        const t = a.teachers;
+        if (t?.profile_id && t.profile_id !== profile?.id) {
+          opts.push({ id: t.profile_id, name: t.name, label: `${t.name} 선생님` });
+        }
+      });
+      // 원장 / 관리자 (본인 제외)
+      admins.forEach(a => {
+        if (a.id !== profile?.id) {
+          opts.push({ id: a.id, name: a.name, label: `${a.name} (${a.role === 'admin' ? '원장' : '관리자'})` });
+        }
+      });
+      setRecipientOptions(opts);
     } catch { showToast('학생 정보 로드 실패', 'error'); }
   }
 
@@ -75,10 +98,27 @@ export default function StudentInfoPage() {
     const text = noteInput.trim();
     if (!text || !selectedId) return;
     try {
-      const row = await addTeacherNote({ student_id: selectedId, author_name: profile?.name ?? '선생님', content: text });
-      setNotes(prev => [...prev, row]);
-      setNoteInput('');
-    } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+      if (msgRecipient) {
+        // 특정 대상에게 직접 메시지 전송
+        const to = recipientOptions.find(o => o.id === msgRecipient);
+        if (!to) { showToast('수신자를 찾을 수 없습니다.', 'error'); return; }
+        if (!profile?.id) { showToast('로그인 정보가 없습니다.', 'error'); return; }
+        await sendMessage({
+          from_id:   profile.id,
+          to_id:     to.id,
+          from_name: profile.name ?? '선생님',
+          to_name:   to.name,
+          content:   text,
+        });
+        showToast(`${to.name}에게 메시지를 보냈습니다.`);
+        setNoteInput('');
+      } else {
+        // 공유 메모 등록
+        const row = await addTeacherNote({ student_id: selectedId, author_name: profile?.name ?? '선생님', content: text });
+        setNotes(prev => [...prev, row]);
+        setNoteInput('');
+      }
+    } catch (e) { showToast('전송 실패: ' + e.message, 'error'); }
   }
 
   async function removeNote(id) {
@@ -426,17 +466,44 @@ export default function StudentInfoPage() {
                 </div>
             }
 
-            <div style={{ display:'flex', gap:8 }}>
-              <input
-                value={noteInput}
-                onChange={e => setNoteInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && submitNote()}
-                placeholder="메모 입력... (Enter로 등록)"
-                style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}
-              />
-              <button onClick={submitNote} style={{ padding:'9px 16px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600, flexShrink:0 }}>
-                <i className="fas fa-paper-plane"></i>
-              </button>
+            {/* 수신자 선택 + 메시지 입력 */}
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:12, fontWeight:600, color:'#64748b', flexShrink:0 }}>
+                  <i className="fas fa-paper-plane" style={{ marginRight:4 }}></i>받는 사람
+                </span>
+                <select
+                  value={msgRecipient}
+                  onChange={e => setMsgRecipient(e.target.value)}
+                  style={{ flex:1, padding:'7px 10px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13, background:'#fff', cursor:'pointer' }}
+                >
+                  <option value="">공유 메모 (담당 선생님 전체)</option>
+                  {recipientOptions.length > 0 && (
+                    <optgroup label="──────────────">
+                      {recipientOptions.map(o => (
+                        <option key={o.id} value={o.id}>{o.label}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <input
+                  value={noteInput}
+                  onChange={e => setNoteInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && !e.shiftKey && submitNote()}
+                  placeholder={msgRecipient
+                    ? `${recipientOptions.find(o=>o.id===msgRecipient)?.name ?? ''}에게 메시지 입력... (Enter로 전송)`
+                    : '공유 메모 입력... (Enter로 등록)'}
+                  style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }}
+                />
+                <button
+                  onClick={submitNote}
+                  style={{ padding:'9px 16px', background: msgRecipient ? '#7209b7' : '#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600, flexShrink:0 }}
+                >
+                  <i className="fas fa-paper-plane"></i>
+                </button>
+              </div>
             </div>
           </div>
 

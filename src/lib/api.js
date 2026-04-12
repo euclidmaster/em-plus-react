@@ -16,6 +16,14 @@ export async function getStudentLinkedProfile(profileId) {
   const { data } = await supabase.from('profiles').select('id, name, role').eq('id', profileId).single();
   return data ?? null;
 }
+export async function getAdminProfiles() {
+  const { data } = await supabase
+    .from('profiles')
+    .select('id, name, role')
+    .in('role', ['admin', 'assistant'])
+    .eq('approved', true);
+  return data ?? [];
+}
 export async function clearStudentAccount(studentId) {
   const { error } = await supabase.from('students').update({ profile_id: null }).eq('id', studentId);
   if (error) throw error;
