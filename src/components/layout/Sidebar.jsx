@@ -16,6 +16,8 @@ const ADMIN_NAV = [
     { to: '/daily-record',  icon: 'fa-book-open',         label: '일일 학습 기록' },
     { to: '/homework',      icon: 'fa-tasks',             label: '숙제 관리' },
     { to: '/performance',   icon: 'fa-clipboard-check',   label: '수행 관리' },
+    { to: '/clinic',        icon: 'fa-stethoscope',       label: '클리닉 관리' },
+    { to: '/clinic-report', icon: 'fa-file-medical-alt',  label: '클리닉 리포트' },
     { to: '/report',        icon: 'fa-chart-line',        label: '학습 리포트',   permission: 'can_view_report' },
   ]},
   { group: '운영 관리', icon: 'fa-cog', items: [

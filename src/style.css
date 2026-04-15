@@ -292,6 +292,19 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes msgBannerIn {
+  from { opacity: 0; transform: translateX(30px) scale(0.96); }
+  to   { opacity: 1; transform: translateX(0)   scale(1);    }
+}
+
+@keyframes bellShake {
+  0%, 100% { transform: rotate(0deg); }
+  20%       { transform: rotate(-15deg); }
+  40%       { transform: rotate(15deg); }
+  60%       { transform: rotate(-10deg); }
+  80%       { transform: rotate(10deg); }
+}
+
 .section-title-area {
   margin-bottom: 24px;
 }
@@ -1702,3 +1715,36 @@ body {
   .teacher-grid { grid-template-columns: 1fr; }
   .data-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ========== 인쇄 / PDF 출력 ========== */
+@media print {
+  @page { margin: 15mm; size: A4; }
+
+  /* 사이드바, 헤더, 컨트롤 숨김 */
+  .sidebar,
+  .sidebar-overlay,
+  .sidebar-tab-btn,
+  .top-header,
+  .no-print { display: none !important; }
+
+  /* 메인 영역 여백 리셋 */
+  .main-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+  .content-area { padding: 0 !important; }
+
+  /* 리포트 영역 풀 너비 */
+  .clinic-report-print-area {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* 배경색 인쇄 허용 */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+  /* 페이지 넘김 방지 */
+  table { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+}
+

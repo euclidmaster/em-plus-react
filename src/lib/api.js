@@ -286,7 +286,6 @@ export async function getStudentsForTeacher(teacherRecordId) {
     .eq('teacher_id', teacherRecordId);
   if (linkErr) console.warn('[getStudentsForTeacher] student_teachers 조회 오류:', linkErr);
   const junctionIds = (links ?? []).map(l => l.student_id);
-  console.log('[getStudentsForTeacher] teacherRecordId:', teacherRecordId, '| junction IDs:', junctionIds);
 
   // students.teacher_id(단일 배정) + junction 테이블 배정 모두 포함
   let query = supabase
@@ -304,19 +303,52 @@ export async function getStudentsForTeacher(teacherRecordId) {
     console.error('[getStudentsForTeacher] students 조회 오류:', error);
     throw error;
   }
-  console.log('[getStudentsForTeacher] 조회된 학생:', data?.length, data);
   return data ?? [];
 }
 
 // ==================== 학생 본인 조회 ====================
 export async function getStudentByProfileId(profileId) {
+  // 1단계: 학생 기본 정보 + FK 선생님 조회
   const { data, error } = await supabase
     .from('students')
-    .select('*, teachers(id, name, title, profile_id), student_teachers(id, teacher_id, teachers(id, name, title, profile_id))')
+    .select('*, teachers(id, name, title, profile_id)')
     .eq('profile_id', profileId)
     .single();
   if (error) throw error;
-  return data;
+
+  // 2단계: student_teachers 별도 조회 (RLS 허용 시 사용)
+  const { data: stData } = await supabase
+    .from('student_teachers')
+    .select('id, teacher_id, teachers(id, name, title, profile_id)')
+    .eq('student_id', data.id);
+
+  // 3단계: 메시지 발신자 기반 fallback — 이 학생에게 메시지를 보낸 선생님 조회
+  // (student_teachers RLS가 막혀도 동작)
+  const { data: msgData } = await supabase
+    .from('messages')
+    .select('from_id')
+    .eq('to_id', profileId);
+
+  let extraTeachers = [];
+  if (msgData && msgData.length > 0) {
+    const senderIds = [...new Set(msgData.map(m => m.from_id))];
+    const { data: tData } = await supabase
+      .from('teachers')
+      .select('id, name, title, profile_id')
+      .in('profile_id', senderIds);
+    if (tData) {
+      extraTeachers = tData.map(t => ({ teachers: t }));
+    }
+  }
+
+  // student_teachers + 메시지 기반 선생님 합치기 (중복은 teacher_id 기준 제거)
+  const merged = [...(stData ?? [])];
+  for (const et of extraTeachers) {
+    const alreadyIn = merged.some(st => st.teachers?.id === et.teachers?.id);
+    if (!alreadyIn) merged.push(et);
+  }
+
+  return { ...data, student_teachers: merged };
 }
 export async function getMessagesBetween(userId1, userId2) {
   const { data, error } = await supabase
@@ -380,24 +412,72 @@ export async function deleteTeacherNote(id) {
 }
 
 // ==================== 수행 관리 ====================
-export async function getPerformances(studentId) {
-  const { data, error } = await supabase.from('performances').select('*').eq('student_id', studentId).order('eval_date', { ascending: false });
+export async function getAllPerformances() {
+  const { data, error } = await supabase
+    .from('performances')
+    .select('*, performance_sessions(*), students(id, name)')
+    .order('created_at', { ascending: false });
   if (error) throw error;
-  return data;
+  return (data ?? []).map(p => ({
+    ...p,
+    student_name: p.students?.name ?? '알 수 없음',
+    performance_sessions: (p.performance_sessions ?? []).sort((a, b) => a.session_no - b.session_no),
+  }));
+}
+export async function getPerformances(studentId) {
+  const { data, error } = await supabase
+    .from('performances')
+    .select('*, performance_sessions(*)')
+    .eq('student_id', studentId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(p => ({
+    ...p,
+    performance_sessions: (p.performance_sessions ?? []).sort((a, b) => a.session_no - b.session_no),
+  }));
 }
 export async function createPerformance(payload) {
-  const { data, error } = await supabase.from('performances').insert(payload).select().single();
+  const { sessions, ...perfData } = payload;
+  const { data: perf, error } = await supabase.from('performances').insert(perfData).select().single();
   if (error) throw error;
-  return data;
+  if (sessions?.length) {
+    const rows = sessions
+      .filter(s => s.eval_date || s.eval_types?.length || s.is_done)
+      .map(s => ({ performance_id: perf.id, session_no: s.session_no, eval_date: s.eval_date || null, eval_types: s.eval_types ?? [], is_done: s.is_done ?? false }));
+    if (rows.length) {
+      const { error: sErr } = await supabase.from('performance_sessions').insert(rows);
+      if (sErr) throw sErr;
+    }
+  }
+  return perf;
 }
 export async function updatePerformance(id, payload) {
-  const { data, error } = await supabase.from('performances').update(payload).eq('id', id).select().single();
+  const { sessions, performance_sessions, ...perfData } = payload;
+  const { data: perf, error } = await supabase.from('performances').update(perfData).eq('id', id).select().single();
   if (error) throw error;
-  return data;
+  await supabase.from('performance_sessions').delete().eq('performance_id', id);
+  const src = sessions ?? performance_sessions ?? [];
+  if (src.length) {
+    const rows = src
+      .filter(s => s.eval_date || s.eval_types?.length || s.is_done)
+      .map(s => ({ performance_id: id, session_no: s.session_no, eval_date: s.eval_date || null, eval_types: s.eval_types ?? [], is_done: s.is_done ?? false }));
+    if (rows.length) await supabase.from('performance_sessions').insert(rows);
+  }
+  return perf;
 }
 export async function deletePerformance(id) {
   const { error } = await supabase.from('performances').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ==================== 파일 업로드 ====================
+export async function uploadAttachment(file) {
+  const ext  = file.name.split('.').pop();
+  const path = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from('attachments').getPublicUrl(path);
+  return data.publicUrl;
 }
 
 // ==================== 쪽지 (관리자 전체 열람) ====================
@@ -579,6 +659,130 @@ export async function approveProfile(id) {
 export async function rejectProfile(id) {
   const { error } = await supabase.from('profiles').delete().eq('id', id);
   if (error) throw error;
+}
+
+// ==================== 클리닉 관리 ====================
+// 필요한 Supabase SQL (처음 1회 실행):
+// create table if not exists clinic_sessions (
+//   id uuid default gen_random_uuid() primary key,
+//   teacher_id uuid references teachers(id) on delete set null,
+//   assistant_id uuid references teachers(id) on delete set null,
+//   session_date date not null default current_date,
+//   created_at timestamptz default now()
+// );
+// create table if not exists clinic_items (
+//   id uuid default gen_random_uuid() primary key,
+//   session_id uuid references clinic_sessions(id) on delete cascade not null,
+//   student_id uuid references students(id) on delete set null,
+//   subject text default '',
+//   clinic_type text default '',
+//   instructions text default '',
+//   result text default '',
+//   sort_order int default 0,
+//   created_at timestamptz default now()
+// );
+export async function getClinicSessions(date) {
+  const { data, error } = await supabase
+    .from('clinic_sessions')
+    .select(`
+      *,
+      teacher:teacher_id (id, name, role),
+      assistant:assistant_id (id, name, role),
+      clinic_items (
+        id, session_id, student_id, subject, clinic_type,
+        instructions, result, sort_order, created_at,
+        students (id, name)
+      )
+    `)
+    .eq('session_date', date)
+    .order('created_at');
+  if (error) throw error;
+  return (data ?? []).map(s => ({
+    ...s,
+    clinic_items: (s.clinic_items ?? []).sort((a, b) => a.sort_order - b.sort_order),
+  }));
+}
+export async function createClinicSession(payload) {
+  const { data, error } = await supabase
+    .from('clinic_sessions')
+    .insert(payload)
+    .select(`
+      *,
+      teacher:teacher_id (id, name, role),
+      assistant:assistant_id (id, name, role)
+    `)
+    .single();
+  if (error) throw error;
+  return { ...data, clinic_items: [] };
+}
+export async function updateClinicSession(id, payload) {
+  const { data, error } = await supabase
+    .from('clinic_sessions')
+    .update(payload)
+    .eq('id', id)
+    .select(`
+      *,
+      teacher:teacher_id (id, name, role),
+      assistant:assistant_id (id, name, role)
+    `)
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteClinicSession(id) {
+  const { error } = await supabase.from('clinic_sessions').delete().eq('id', id);
+  if (error) throw error;
+}
+export async function createClinicItem(payload) {
+  const { data, error } = await supabase
+    .from('clinic_items')
+    .insert(payload)
+    .select('*, students(id, name)')
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function updateClinicItem(id, payload) {
+  const { data, error } = await supabase
+    .from('clinic_items')
+    .update(payload)
+    .eq('id', id)
+    .select('*, students(id, name)')
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteClinicItem(id) {
+  const { error } = await supabase.from('clinic_items').delete().eq('id', id);
+  if (error) throw error;
+}
+export async function getClinicReportData(studentId, yearMonth) {
+  const [year, month] = yearMonth.split('-');
+  const start = `${yearMonth}-01`;
+  const lastDay = new Date(Number(year), Number(month), 0).getDate();
+  const end = `${yearMonth}-${String(lastDay).padStart(2, '0')}`;
+
+  const { data: sessions, error: sErr } = await supabase
+    .from('clinic_sessions')
+    .select('id, session_date, teacher:teacher_id(name), assistant:assistant_id(name)')
+    .gte('session_date', start)
+    .lte('session_date', end);
+  if (sErr) throw sErr;
+  if (!sessions?.length) return [];
+
+  const sessionIds = sessions.map(s => s.id);
+  const sessionMap = Object.fromEntries(sessions.map(s => [s.id, s]));
+
+  const { data: items, error: iErr } = await supabase
+    .from('clinic_items')
+    .select('id, session_id, subject, clinic_type, instructions, result')
+    .eq('student_id', studentId)
+    .in('session_id', sessionIds);
+  if (iErr) throw iErr;
+
+  return (items ?? [])
+    .map(item => ({ ...item, session: sessionMap[item.session_id] ?? null }))
+    .sort((a, b) => (a.session?.session_date ?? '') > (b.session?.session_date ?? '') ? 1 : -1);
 }
 
 function getMondayOfWeek(date) {

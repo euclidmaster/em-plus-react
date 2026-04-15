@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { ToastProvider } from './components/common/Toast.jsx';
 import ProtectedRoute from './components/layout/ProtectedRoute.jsx';
 import Sidebar from './components/layout/Sidebar.jsx';
 import TopHeader from './components/layout/TopHeader.jsx';
+import MessageNotificationBanner from './components/common/MessageNotificationBanner.jsx';
+import { useMessageNotification } from './hooks/useMessageNotification.js';
 
 import LoginPage       from './pages/LoginPage.jsx';
 import DashboardPage   from './pages/DashboardPage.jsx';
@@ -15,6 +17,8 @@ import WeeklyPlanPage  from './pages/WeeklyPlanPage.jsx';
 import DailyRecordPage from './pages/DailyRecordPage.jsx';
 import HomeworkPage    from './pages/HomeworkPage.jsx';
 import PerformancePage from './pages/PerformancePage.jsx';
+import ClinicPage       from './pages/ClinicPage.jsx';
+import ClinicReportPage from './pages/ClinicReportPage.jsx';
 import ReportPage      from './pages/ReportPage.jsx';
 import BoardPage       from './pages/BoardPage.jsx';
 import AttendancePage  from './pages/AttendancePage.jsx';
@@ -39,6 +43,36 @@ function AppLayout() {
   const { profile } = useAuth();
   const role = profile?.role ?? 'admin';
 
+  const { unreadMessages, unreadCount, markAllRead } = useMessageNotification();
+  const [bannerVisible, setBannerVisible] = useState(false);
+  const prevCountRef = useRef(0);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // 새 메시지 도착 시 배너 표시
+  useEffect(() => {
+    if (unreadCount > prevCountRef.current) {
+      setBannerVisible(true);
+    }
+    prevCountRef.current = unreadCount;
+  }, [unreadCount]);
+
+  // 메시지 페이지 방문 시 자동으로 읽음 처리
+  useEffect(() => {
+    const msgPath = role === 'student' ? '/my/chat' : '/messages';
+    if (location.pathname === msgPath) {
+      markAllRead();
+      setBannerVisible(false);
+    }
+  }, [location.pathname, role, markAllRead]);
+
+  const handleBellClick = () => {
+    const chatPath = role === 'student' ? '/my/chat' : '/messages';
+    markAllRead();
+    setBannerVisible(false);
+    navigate(chatPath);
+  };
+
   return (
     <div className={`app-wrapper${sidebarCollapsed ? ' sidebar-hidden' : ''}`}>
       <Sidebar
@@ -48,7 +82,18 @@ function AppLayout() {
         onToggleCollapse={() => setSidebarCollapsed(o => !o)}
       />
       <main className="main-content">
-        <TopHeader onMenuToggle={() => setSidebarOpen(o => !o)} />
+        <TopHeader
+          onMenuToggle={() => setSidebarOpen(o => !o)}
+          unreadCount={unreadCount}
+          onBellClick={handleBellClick}
+        />
+        {bannerVisible && (
+          <MessageNotificationBanner
+            unreadMessages={unreadMessages}
+            onDismiss={() => setBannerVisible(false)}
+            onRead={() => { markAllRead(); setBannerVisible(false); }}
+          />
+        )}
         <div className="content-area">
           <Routes>
             {role === 'student' ? (
@@ -76,6 +121,8 @@ function AppLayout() {
                 <Route path="/daily-record" element={<DailyRecordPage />} />
                 <Route path="/homework"     element={<HomeworkPage />} />
                 <Route path="/performance"  element={<PerformancePage />} />
+                <Route path="/clinic"        element={<ClinicPage />} />
+                <Route path="/clinic-report" element={<ClinicReportPage />} />
                 <Route path="/report"       element={<ReportPage />} />
                 <Route path="/board"        element={<BoardPage />} />
                 <Route path="/attendance"   element={<AttendancePage />} />
