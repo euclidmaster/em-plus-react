@@ -10,6 +10,8 @@ const BREADCRUMB = {
   '/daily-record': '일일 학습 기록',
   '/homework':     '숙제 관리',
   '/performance':  '수행 관리',
+  '/clinic':       '클리닉 관리',
+  '/clinic-report':'클리닉 리포트',
   '/report':       '학습 리포트',
   '/board':        '학원 게시판',
   '/attendance':   '출석 관리',
@@ -21,13 +23,15 @@ const BREADCRUMB = {
   '/my/weekly-plan':  '주간 플랜',
   '/my/daily-record': '일일 기록',
   '/my/homework':     '숙제 확인',
+  '/my/performance':  '수행 관리',
+  '/my/report':       '학습 리포트',
   '/my/chat':         '선생님과 대화',
 };
 
 const DAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 
-export default function TopHeader({ onMenuToggle }) {
+export default function TopHeader({ onMenuToggle, unreadCount = 0, onBellClick }) {
   const { pathname } = useLocation();
   const [now, setNow] = useState(new Date());
   const [calOpen, setCalOpen] = useState(false);
@@ -74,7 +78,35 @@ export default function TopHeader({ onMenuToggle }) {
           {BREADCRUMB[pathname] ?? pathname}
         </div>
       </div>
-      <div className="header-right" style={{ position:'relative' }} ref={calRef}>
+      <div className="header-right" style={{ position:'relative', display:'flex', alignItems:'center', gap:16 }} ref={calRef}>
+        {/* 알림 벨 */}
+        <button
+          onClick={onBellClick}
+          style={{
+            position: 'relative', background: 'none', border: 'none',
+            cursor: 'pointer', color: unreadCount > 0 ? '#667eea' : '#94a3b8',
+            fontSize: 20, padding: '4px 6px', borderRadius: 8,
+            transition: 'color 0.15s',
+          }}
+          title={unreadCount > 0 ? `읽지 않은 메시지 ${unreadCount}개` : '새 메시지 없음'}
+        >
+          <i className={`fas ${unreadCount > 0 ? 'fa-bell' : 'fa-bell'}`}
+            style={{ animation: unreadCount > 0 ? 'bellShake 0.5s ease' : 'none' }}
+          ></i>
+          {unreadCount > 0 && (
+            <span style={{
+              position: 'absolute', top: 0, right: 0,
+              background: '#ef4444', color: '#fff',
+              borderRadius: '50%', width: 18, height: 18,
+              fontSize: 10, fontWeight: 700,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '2px solid #fff',
+            }}>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </button>
+
         <div
           className="header-date"
           onClick={() => setCalOpen(o => !o)}
