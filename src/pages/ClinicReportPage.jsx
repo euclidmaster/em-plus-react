@@ -7,10 +7,7 @@ const SUBJECT_COLORS = {
   '영어': '#4361ee', '수학': '#22c55e', '과학': '#f59e0b',
   '국어': '#ef4444', '사회': '#8b5cf6', '기타': '#64748b',
 };
-
-function getSubjectColor(subject) {
-  return SUBJECT_COLORS[subject] ?? '#64748b';
-}
+function getSubjectColor(s) { return SUBJECT_COLORS[s] ?? '#64748b'; }
 
 /* ─────────────────────────────────────────────
    메인 페이지
@@ -22,10 +19,13 @@ export default function ClinicReportPage() {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  const [studentId,   setStudentId]   = useState('');
-  const [yearMonth,   setYearMonth]   = useState(defaultMonth);
-  const [items,       setItems]       = useState([]);
-  const [loading,     setLoading]     = useState(false);
+  const [studentId,  setStudentId]  = useState('');
+  const [yearMonth,  setYearMonth]  = useState(defaultMonth);
+  const [items,      setItems]      = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [viewMode,   setViewMode]   = useState('report');   // 'report' | 'ai'
+  const [aiSummary,  setAiSummary]  = useState('');
+  const [aiLoading,  setAiLoading]  = useState(false);
 
   const student = students.find(s => s.id === studentId);
 
@@ -34,7 +34,7 @@ export default function ClinicReportPage() {
   }, [students]);
 
   useEffect(() => {
-    if (studentId) loadData();
+    if (studentId) { loadData(); setAiSummary(''); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId, yearMonth]);
 
@@ -50,6 +50,34 @@ export default function ClinicReportPage() {
     }
   }
 
+  /* AI 요약 생성 */
+  async function generateSummary() {
+    setAiLoading(true);
+    setAiSummary('');
+    try {
+      const prompt = buildPrompt(student?.name ?? '학생', monthLabel, items);
+      const res = await fetch('/api/summarize', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === 'API_KEY_NOT_SET') {
+          setAiSummary('__NO_KEY__');
+        } else {
+          throw new Error(data.error ?? '요약 실패');
+        }
+        return;
+      }
+      setAiSummary(data.summary);
+    } catch (e) {
+      showToast('AI 요약 실패: ' + e.message, 'error');
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   /* 과목별 그룹 */
   const grouped = items.reduce((acc, item) => {
     const key = item.subject || '기타';
@@ -58,21 +86,21 @@ export default function ClinicReportPage() {
   }, {});
 
   const [year, month] = yearMonth.split('-');
-  const monthLabel  = `${year}년 ${parseInt(month)}월`;
-  const totalCount  = items.length;
-  const hasData     = !loading && studentId && totalCount > 0;
+  const monthLabel = `${year}년 ${parseInt(month)}월`;
+  const totalCount = items.length;
+  const hasData    = !loading && studentId && totalCount > 0;
 
   return (
     <div>
       {/* ── 컨트롤 바 (인쇄 시 숨김) ── */}
       <div className="no-print" style={{ padding: '24px 24px 0', maxWidth: 960, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#1e293b', margin: 0 }}>클리닉 월간 리포트</h1>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <select
               value={studentId}
               onChange={e => setStudentId(e.target.value)}
-              style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#1e293b', background: '#fff' }}
+              style={ctrlStyle}
             >
               <option value="">학생 선택</option>
               {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -81,7 +109,7 @@ export default function ClinicReportPage() {
               type="month"
               value={yearMonth}
               onChange={e => setYearMonth(e.target.value)}
-              style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#1e293b', background: '#fff' }}
+              style={ctrlStyle}
             />
             <button
               onClick={() => window.print()}
@@ -90,11 +118,10 @@ export default function ClinicReportPage() {
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '7px 20px',
                 background: hasData ? '#4361ee' : '#e2e8f0',
-                color: hasData ? '#fff' : '#94a3b8',
+                color:  hasData ? '#fff' : '#94a3b8',
                 border: 'none', borderRadius: 8,
                 fontSize: 14, fontWeight: 600,
                 cursor: hasData ? 'pointer' : 'not-allowed',
-                transition: 'background 0.15s',
               }}
             >
               <i className="fas fa-file-pdf" /> PDF 저장
@@ -102,7 +129,25 @@ export default function ClinicReportPage() {
           </div>
         </div>
 
-        {/* 통계 요약 카드 (인쇄 전 미리보기) */}
+        {/* 뷰 토글 */}
+        {hasData && (
+          <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: '#f1f5f9', borderRadius: 10, padding: 4, width: 'fit-content' }}>
+            <ToggleBtn
+              active={viewMode === 'report'}
+              icon="fa-table"
+              label="리포트"
+              onClick={() => setViewMode('report')}
+            />
+            <ToggleBtn
+              active={viewMode === 'ai'}
+              icon="fa-wand-magic-sparkles"
+              label="AI 요약"
+              onClick={() => setViewMode('ai')}
+            />
+          </div>
+        )}
+
+        {/* 통계 요약 카드 */}
         {hasData && (
           <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
             <StatCard label="총 클리닉 횟수" value={`${totalCount}회`} color="#4361ee" />
@@ -134,39 +179,35 @@ export default function ClinicReportPage() {
         ) : (
           <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
             {/* 리포트 헤더 */}
-            <div style={{
-              background: 'linear-gradient(135deg, #4361ee 0%, #7209b7 100%)',
-              color: '#fff', padding: '28px 32px', textAlign: 'center',
-            }}>
-              <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, letterSpacing: 2 }}>EM+ 학원</div>
-              <h2 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 8px', letterSpacing: 0.5 }}>
-                클리닉 활동 리포트
-              </h2>
-              <div style={{ fontSize: 16, opacity: 0.9 }}>
-                <strong style={{ fontSize: 18 }}>{student?.name ?? ''}</strong>
-                &ensp;|&ensp;{monthLabel}
-                &ensp;|&ensp;총 <strong>{totalCount}회</strong> 참여
-              </div>
-            </div>
+            <ReportHeader studentName={student?.name ?? ''} monthLabel={monthLabel} totalCount={totalCount} />
 
-            {/* 과목별 섹션 */}
             <div style={{ padding: '28px 32px' }}>
-              {Object.entries(grouped).map(([subject, subItems], idx) => (
-                <SubjectSection
-                  key={subject}
-                  subject={subject}
-                  items={subItems}
-                  isLast={idx === Object.keys(grouped).length - 1}
+              {/* ── 리포트 뷰 ── */}
+              {viewMode === 'report' && (
+                <>
+                  {Object.entries(grouped).map(([subject, subItems], idx) => (
+                    <SubjectSection
+                      key={subject}
+                      subject={subject}
+                      items={subItems}
+                      isLast={idx === Object.keys(grouped).length - 1}
+                    />
+                  ))}
+                </>
+              )}
+
+              {/* ── AI 요약 뷰 ── */}
+              {viewMode === 'ai' && (
+                <AiSummaryView
+                  summary={aiSummary}
+                  loading={aiLoading}
+                  hasData={hasData}
+                  onGenerate={generateSummary}
                 />
-              ))}
+              )}
 
               {/* 리포트 푸터 */}
-              <div style={{
-                marginTop: 32, paddingTop: 16,
-                borderTop: '1px solid #f1f5f9',
-                display: 'flex', justifyContent: 'space-between',
-                fontSize: 12, color: '#94a3b8',
-              }}>
+              <div style={{ marginTop: 32, paddingTop: 16, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#94a3b8' }}>
                 <span>출력일: {new Date().toLocaleDateString('ko-KR')}</span>
                 <span>EM+ 학습관리 시스템</span>
               </div>
@@ -179,28 +220,123 @@ export default function ClinicReportPage() {
 }
 
 /* ─────────────────────────────────────────────
+   AI 요약 뷰
+───────────────────────────────────────────── */
+function AiSummaryView({ summary, loading, hasData, onGenerate }) {
+  function handleCopy() {
+    if (!summary || summary === '__NO_KEY__') return;
+    navigator.clipboard.writeText(summary).then(() => alert('복사되었습니다.'));
+  }
+
+  return (
+    <div>
+      {/* 생성 버튼 */}
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+        <button
+          onClick={onGenerate}
+          disabled={loading || !hasData}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 28px',
+            background: 'linear-gradient(135deg, #4361ee, #7209b7)',
+            color: '#fff', border: 'none', borderRadius: 10,
+            fontSize: 15, fontWeight: 700,
+            cursor: loading ? 'wait' : 'pointer',
+            opacity: loading ? 0.7 : 1,
+            boxShadow: '0 4px 14px rgba(67,97,238,0.3)',
+          }}
+        >
+          {loading
+            ? <><i className="fas fa-spinner fa-spin" /> AI 요약 생성 중...</>
+            : <><i className="fas fa-wand-magic-sparkles" /> AI 요약 생성</>
+          }
+        </button>
+      </div>
+
+      {/* 결과 영역 */}
+      {!summary && !loading && (
+        <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8' }}>
+          <i className="fas fa-robot" style={{ fontSize: 36, marginBottom: 10, display: 'block', opacity: 0.4 }} />
+          <div style={{ fontSize: 13 }}>버튼을 눌러 학부모용 AI 요약문을 생성하세요.</div>
+        </div>
+      )}
+
+      {summary === '__NO_KEY__' && (
+        <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 10, padding: '16px 20px', fontSize: 13, color: '#92400e' }}>
+          <strong>⚠ API 키가 설정되지 않았습니다.</strong><br />
+          Vercel Dashboard → Settings → Environment Variables 에서<br />
+          <code style={{ background: '#fffbeb', padding: '2px 6px', borderRadius: 4 }}>CLAUDE_API_KEY</code> 를 추가해주세요.
+        </div>
+      )}
+
+      {summary && summary !== '__NO_KEY__' && (
+        <div>
+          {/* 요약 카드 */}
+          <div style={{
+            background: 'linear-gradient(135deg, #f0f4ff 0%, #fdf4ff 100%)',
+            border: '1px solid #c7d2fe',
+            borderRadius: 12,
+            padding: '24px 28px',
+            lineHeight: 1.9,
+            fontSize: 14,
+            color: '#1e293b',
+            whiteSpace: 'pre-wrap',
+            position: 'relative',
+          }}>
+            <div style={{ position: 'absolute', top: 14, right: 14, fontSize: 20, opacity: 0.15 }}>
+              <i className="fas fa-robot" />
+            </div>
+            {summary}
+          </div>
+
+          {/* 복사 버튼 */}
+          <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+            <button
+              onClick={handleCopy}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13, cursor: 'pointer' }}
+            >
+              <i className="fas fa-copy" /> 복사
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   리포트 헤더
+───────────────────────────────────────────── */
+function ReportHeader({ studentName, monthLabel, totalCount }) {
+  return (
+    <div style={{ background: 'linear-gradient(135deg, #4361ee 0%, #7209b7 100%)', color: '#fff', padding: '28px 32px', textAlign: 'center' }}>
+      <div style={{ fontSize: 12, opacity: 0.8, marginBottom: 4, letterSpacing: 2 }}>EM+ 학원</div>
+      <h2 style={{ fontSize: 24, fontWeight: 800, margin: '0 0 8px', letterSpacing: 0.5 }}>클리닉 활동 리포트</h2>
+      <div style={{ fontSize: 16, opacity: 0.9 }}>
+        <strong style={{ fontSize: 18 }}>{studentName}</strong>
+        &ensp;|&ensp;{monthLabel}
+        &ensp;|&ensp;총 <strong>{totalCount}회</strong> 참여
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    과목 섹션
 ───────────────────────────────────────────── */
 function SubjectSection({ subject, items, isLast }) {
   const color = getSubjectColor(subject);
-
   return (
     <div style={{ marginBottom: isLast ? 0 : 28 }}>
-      {/* 섹션 헤더 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 4, height: 22, background: color, borderRadius: 2 }} />
           <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{subject}</span>
         </div>
-        <span style={{
-          fontSize: 12, fontWeight: 600, color, background: `${color}18`,
-          padding: '3px 10px', borderRadius: 20,
-        }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color, background: `${color}18`, padding: '3px 10px', borderRadius: 20 }}>
           {items.length}회
         </span>
       </div>
-
-      {/* 테이블 */}
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ background: '#f8fafc' }}>
@@ -213,18 +349,12 @@ function SubjectSection({ subject, items, isLast }) {
         <tbody>
           {items.map((item, i) => {
             const raw = item.session?.session_date;
-            const dateStr = raw
-              ? new Date(raw + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
-              : '—';
-            const isEven = i % 2 === 1;
+            const dateStr = raw ? new Date(raw + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '—';
             return (
-              <tr key={item.id} style={{ background: isEven ? '#f8fafc' : '#fff' }}>
+              <tr key={item.id} style={{ background: i % 2 === 1 ? '#f8fafc' : '#fff' }}>
                 <td style={{ ...td, color: '#64748b', fontWeight: 500 }}>{dateStr}</td>
                 <td style={td}>
-                  <span style={{
-                    background: `${color}15`, color,
-                    padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600,
-                  }}>
+                  <span style={{ background: `${color}15`, color, padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
                     {item.clinic_type || '—'}
                   </span>
                 </td>
@@ -244,15 +374,36 @@ function SubjectSection({ subject, items, isLast }) {
 }
 
 /* ─────────────────────────────────────────────
+   토글 버튼
+───────────────────────────────────────────── */
+function ToggleBtn({ active, icon, label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '7px 18px',
+        background: active ? '#fff' : 'transparent',
+        color: active ? '#4361ee' : '#64748b',
+        border: 'none', borderRadius: 8,
+        fontSize: 13, fontWeight: active ? 700 : 500,
+        cursor: 'pointer',
+        boxShadow: active ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+        transition: 'all 0.15s',
+      }}
+    >
+      <i className={`fas ${icon}`} />
+      {label}
+    </button>
+  );
+}
+
+/* ─────────────────────────────────────────────
    통계 카드
 ───────────────────────────────────────────── */
 function StatCard({ label, value, color }) {
   return (
-    <div style={{
-      background: '#fff', border: `1px solid ${color}30`,
-      borderRadius: 10, padding: '12px 18px',
-      display: 'flex', flexDirection: 'column', gap: 2, minWidth: 100,
-    }}>
+    <div style={{ background: '#fff', border: `1px solid ${color}30`, borderRadius: 10, padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 2, minWidth: 100 }}>
       <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 500 }}>{label}</span>
       <span style={{ fontSize: 20, fontWeight: 700, color }}>{value}</span>
     </div>
@@ -260,22 +411,49 @@ function StatCard({ label, value, color }) {
 }
 
 /* ─────────────────────────────────────────────
+   AI 프롬프트 빌더
+───────────────────────────────────────────── */
+function buildPrompt(studentName, monthLabel, items) {
+  const lines = items.map(item => {
+    const raw = item.session?.session_date;
+    const dateStr = raw ? new Date(raw + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '날짜미상';
+    const parts = [
+      dateStr,
+      item.subject || '과목미상',
+      item.clinic_type || '유형미상',
+    ];
+    if (item.instructions) parts.push(`지시: ${item.instructions}`);
+    if (item.result)       parts.push(`결과: ${item.result}`);
+    return parts.join(' | ');
+  }).join('\n');
+
+  return `당신은 학원 담당 선생님입니다.
+아래는 ${studentName} 학생의 ${monthLabel} 클리닉 활동 기록입니다.
+
+${lines}
+
+위 기록을 바탕으로 학부모에게 전달할 클리닉 활동 요약문을 작성해주세요.
+- 200~300자 내외
+- 따뜻하고 전문적인 어조
+- 잘한 점과 개선이 필요한 점을 균형 있게 언급
+- 앞으로의 학습 방향 간략히 포함
+- 인사말 없이 본문만 작성`;
+}
+
+/* ─────────────────────────────────────────────
    스타일 상수
 ───────────────────────────────────────────── */
+const ctrlStyle = {
+  padding: '7px 12px', border: '1px solid #e2e8f0',
+  borderRadius: 8, fontSize: 14, color: '#1e293b', background: '#fff',
+};
 const th = {
-  padding: '9px 12px',
-  textAlign: 'center',
-  fontWeight: 600,
-  color: '#475569',
-  borderBottom: '2px solid #e2e8f0',
-  fontSize: 12,
-  whiteSpace: 'nowrap',
+  padding: '9px 12px', textAlign: 'center',
+  fontWeight: 600, color: '#475569',
+  borderBottom: '2px solid #e2e8f0', fontSize: 12, whiteSpace: 'nowrap',
 };
 const td = {
-  padding: '10px 12px',
-  textAlign: 'center',
-  color: '#374151',
-  verticalAlign: 'top',
-  borderBottom: '1px solid #f1f5f9',
-  lineHeight: 1.5,
+  padding: '10px 12px', textAlign: 'center',
+  color: '#374151', verticalAlign: 'top',
+  borderBottom: '1px solid #f1f5f9', lineHeight: 1.5,
 };
