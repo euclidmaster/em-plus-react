@@ -6,6 +6,7 @@ const BREADCRUMB = {
   '/students':     '학생 명단',
   '/student-info': '학생 개인정보',
   '/grades':       '성적 관리',
+  '/subject-guide':'교과선택 가이드',
   '/weekly-plan':  '주간 학습 플랜',
   '/daily-record': '일일 학습 기록',
   '/homework':     '숙제 관리',

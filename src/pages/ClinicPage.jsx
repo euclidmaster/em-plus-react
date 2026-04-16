@@ -26,9 +26,12 @@ export default function ClinicPage() {
   const showToast = useToast();
   const role = profile?.role ?? 'teacher';
   const isAssistant = role === 'assistant';
+  const isAdmin     = role === 'admin';
 
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate]               = useState(today);
+  // 당일이거나 원장이면 편집 가능
+  const canEdit = isAdmin || date === today;
   const [sessions, setSessions]       = useState([]);
   const [teachers, setTeachers]       = useState([]);
   const [students, setStudents]       = useState([]);
@@ -189,13 +192,18 @@ export default function ClinicPage() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {!canEdit && (
+            <span style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <i className="fas fa-lock" /> 지난 날짜 — {isAdmin ? '' : '원장만 수정 가능'}
+            </span>
+          )}
           <input
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
             style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#1e293b', background: '#fff' }}
           />
-          {!isAssistant && (
+          {!isAssistant && canEdit && (
             <button
               onClick={handleAddSession}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
@@ -253,6 +261,7 @@ create table if not exists clinic_items (
               session={session}
               color={COLOR_PALETTE[idx % COLOR_PALETTE.length]}
               isAssistant={isAssistant}
+              canEdit={canEdit}
               teacherList={teacherList}
               assistantList={assistantList}
               students={students}
@@ -273,7 +282,7 @@ create table if not exists clinic_items (
    세션 카드
 ───────────────────────────────────────────── */
 function SessionCard({
-  session, color, isAssistant,
+  session, color, isAssistant, canEdit,
   teacherList, assistantList, students,
   onUpdateSession, onDeleteSession, onAddItem, onUpdateItem, onDeleteItem,
 }) {
@@ -301,7 +310,7 @@ function SessionCard({
       {/* 세션 헤더 */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         {/* 주체 (색상 버튼) */}
-        {!isAssistant ? (
+        {!isAssistant && canEdit ? (
           <select
             value={primaryId ?? ''}
             onChange={e => setPrimary(e.target.value)}
@@ -317,7 +326,7 @@ function SessionCard({
         )}
 
         {/* 보조 (흰 버튼) */}
-        {!isAssistant ? (
+        {!isAssistant && canEdit ? (
           <select
             value={secondaryId ?? ''}
             onChange={e => setSecondary(e.target.value)}
@@ -328,11 +337,11 @@ function SessionCard({
           </select>
         ) : (
           <div style={{ background: '#fff', color: '#1e293b', padding: '6px 14px', borderRadius: 7, fontWeight: 600, fontSize: 14, border: '1px solid #e2e8f0' }}>
-            {secondaryName ?? secondaryLabel}
+            {secondaryName ?? (secondaryLabel)}
           </div>
         )}
 
-        {!isAssistant && (
+        {!isAssistant && canEdit && (
           <button
             onClick={() => onDeleteSession(session.id)}
             style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 16, padding: 4 }}
@@ -356,9 +365,9 @@ function SessionCard({
 
         {/* 컬럼 헤더 */}
         {(session.clinic_items ?? []).length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr 32px', gap: 8, marginBottom: 6, padding: '0 2px' }}>
-            {['학생', '과목', '클리닉', isAssistant ? '결과 입력' : '지시내용', ''].map((h, i) => (
-              <div key={i} style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textAlign: i === 4 ? 'center' : 'left' }}>{h}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 6, padding: '0 2px' }}>
+            {['학생', '과목', '클리닉', '내용', ''].map((h, i) => (
+              <div key={i} style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textAlign: 'left' }}>{h}</div>
             ))}
           </div>
         )}
@@ -368,22 +377,24 @@ function SessionCard({
             key={item.id}
             item={item}
             color={color}
-            isAssistant={isAssistant}
+            canEdit={canEdit}
             students={students}
             onUpdate={patch => onUpdateItem(session.id, item.id, patch)}
             onDelete={() => onDeleteItem(session.id, item.id)}
           />
         ))}
 
-        {/* 행추가 버튼 */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-          <button
-            onClick={() => onAddItem(session.id)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 16px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-          >
-            <i className="fas fa-plus" /> 행추가
-          </button>
-        </div>
+        {/* 행추가 버튼 — 편집 가능할 때만 */}
+        {canEdit && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+            <button
+              onClick={() => onAddItem(session.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 16px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            >
+              <i className="fas fa-plus" /> 행추가
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -392,28 +403,41 @@ function SessionCard({
 /* ─────────────────────────────────────────────
    아이템 행
 ───────────────────────────────────────────── */
-function ItemRow({ item, color, isAssistant, students, onUpdate, onDelete }) {
-  const [instructions, setInstructions] = useState(item.instructions ?? '');
-  const [result,       setResult]       = useState(item.result ?? '');
+function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
+  // 내용이 있으면 저장된 상태로 시작, 비어 있으면 편집 모드로 시작
+  const hasContent = !!(item.student_id || item.subject || item.clinic_type || item.instructions || item.result);
+  const [editing, setEditing] = useState(!hasContent);
+  const [saving,  setSaving]  = useState(false);
 
-  useEffect(() => { setInstructions(item.instructions ?? ''); }, [item.instructions]);
-  useEffect(() => { setResult(item.result ?? ''); },            [item.result]);
+  const [studentId,  setStudentId]  = useState(item.student_id ?? '');
+  const [subject,    setSubject]    = useState(item.subject ?? '');
+  const [clinicType, setClinicType] = useState(item.clinic_type ?? '');
+  const [memo,       setMemo]       = useState(item.instructions ?? item.result ?? '');
 
-  const cellStyle = {
-    border: `1px solid ${color.border}`,
-    borderRadius: 6,
-    padding: '6px 8px',
-    background: '#fff',
-    fontSize: 13,
-    width: '100%',
-    outline: 'none',
-    color: '#1e293b',
-  };
-  const readonlyCellStyle = {
-    ...cellStyle,
-    background: '#f8fafc',
-    color: '#475569',
-  };
+  // 외부에서 item이 바뀔 때 로컬 상태 동기화 (편집 중이 아닐 때만)
+  useEffect(() => { if (!editing) { setStudentId(item.student_id ?? ''); }  }, [item.student_id]);
+  useEffect(() => { if (!editing) { setSubject(item.subject ?? ''); }        }, [item.subject]);
+  useEffect(() => { if (!editing) { setClinicType(item.clinic_type ?? ''); } }, [item.clinic_type]);
+  useEffect(() => { if (!editing) { setMemo(item.instructions ?? item.result ?? ''); } }, [item.instructions, item.result]);
+
+  const studentName = students.find(s => s.id === studentId)?.name ?? item.students?.name;
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onUpdate({
+        student_id:  studentId || null,
+        subject:     subject,
+        clinic_type: clinicType,
+        instructions: memo,
+        result:       memo,   // result 필드도 동기화
+      });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const selectSuffix = {
     appearance: 'none',
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
@@ -424,87 +448,136 @@ function ItemRow({ item, color, isAssistant, students, onUpdate, onDelete }) {
     cursor: 'pointer',
   };
 
-  return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr 32px', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-      {/* 학생 */}
-      {isAssistant ? (
-        <div style={readonlyCellStyle}>
-          {item.students?.name ?? <span style={{ color: '#cbd5e1' }}>—</span>}
+  const editCell = {
+    border: `1px solid ${color.border}`,
+    borderRadius: 6,
+    padding: '6px 8px',
+    background: '#fff',
+    fontSize: 13,
+    width: '100%',
+    outline: 'none',
+    color: '#1e293b',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  };
+
+  // 저장된 상태: 초록 테두리 + 볼드
+  const savedCell = {
+    border: '1.5px solid #22c55e',
+    borderRadius: 6,
+    padding: '6px 8px',
+    background: '#f0fdf4',
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#15803d',
+    width: '100%',
+    boxSizing: 'border-box',
+    minHeight: 32,
+    display: 'flex',
+    alignItems: 'center',
+  };
+
+  // 과거 날짜 읽기 전용 (회색)
+  const lockedCell = {
+    border: '1px solid #e2e8f0',
+    borderRadius: 6,
+    padding: '6px 8px',
+    background: '#f8fafc',
+    fontSize: 13,
+    color: '#94a3b8',
+    width: '100%',
+    boxSizing: 'border-box',
+    minHeight: 32,
+    display: 'flex',
+    alignItems: 'center',
+  };
+
+  /* ── 과거 날짜: 완전 읽기 전용 ── */
+  if (!canEdit) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+        <div style={lockedCell}>{studentName || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+        <div style={lockedCell}>{item.subject || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+        <div style={lockedCell}>{item.clinic_type || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+        <div style={lockedCell}>{item.instructions || item.result || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+        <div style={{ width: 68 }} />
+      </div>
+    );
+  }
+
+  /* ── 저장된 상태 (보기 모드) ── */
+  if (!editing) {
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+        <div style={savedCell}>{studentName || <span style={{ color: '#86efac' }}>—</span>}</div>
+        <div style={savedCell}>{item.subject || <span style={{ color: '#86efac' }}>—</span>}</div>
+        <div style={savedCell}>{item.clinic_type || <span style={{ color: '#86efac' }}>—</span>}</div>
+        <div style={savedCell}>{item.instructions || item.result || <span style={{ color: '#86efac' }}>—</span>}</div>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button
+            onClick={() => setEditing(true)}
+            title="수정"
+            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, fontWeight:600, color:'#475569', cursor:'pointer' }}
+          >
+            <i className="fas fa-pen" style={{ fontSize:10 }} /> 수정
+          </button>
+          <button
+            onClick={onDelete}
+            title="삭제"
+            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', background:'#fff0f0', border:'1px solid #fecaca', borderRadius:6, fontSize:12, fontWeight:600, color:'#ef4444', cursor:'pointer' }}
+            onMouseEnter={e => e.currentTarget.style.background='#fee2e2'}
+            onMouseLeave={e => e.currentTarget.style.background='#fff0f0'}
+          >
+            <i className="fas fa-trash-alt" style={{ fontSize:10 }} /> 삭제
+          </button>
         </div>
-      ) : (
-        <select
-          value={item.student_id ?? ''}
-          onChange={e => onUpdate({ student_id: e.target.value || null })}
-          style={{ ...cellStyle, ...selectSuffix }}
+      </div>
+    );
+  }
+
+  /* ── 편집 모드 ── */
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+      <select value={studentId} onChange={e => setStudentId(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
+        <option value="">학생 선택</option>
+        {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      <select value={subject} onChange={e => setSubject(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
+        <option value="">과목</option>
+        {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <select value={clinicType} onChange={e => setClinicType(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
+        <option value="">클리닉</option>
+        {CLINIC_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <input
+        type="text"
+        value={memo}
+        placeholder="지시내용 또는 결과 입력"
+        onChange={e => setMemo(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+        style={editCell}
+      />
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          title="저장"
+          style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 10px', background:'#4361ee', border:'none', borderRadius:6, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', opacity: saving ? 0.7 : 1 }}
         >
-          <option value="">학생 선택</option>
-          {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-      )}
-
-      {/* 과목 */}
-      {isAssistant ? (
-        <div style={readonlyCellStyle}>{item.subject || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
-      ) : (
-        <select
-          value={item.subject ?? ''}
-          onChange={e => onUpdate({ subject: e.target.value })}
-          style={{ ...cellStyle, ...selectSuffix }}
-        >
-          <option value="">과목</option>
-          {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      )}
-
-      {/* 클리닉 유형 */}
-      {isAssistant ? (
-        <div style={readonlyCellStyle}>{item.clinic_type || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
-      ) : (
-        <select
-          value={item.clinic_type ?? ''}
-          onChange={e => onUpdate({ clinic_type: e.target.value })}
-          style={{ ...cellStyle, ...selectSuffix }}
-        >
-          <option value="">클리닉</option>
-          {CLINIC_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      )}
-
-      {/* 지시내용 (강사) / 결과 (조교) */}
-      {isAssistant ? (
-        <input
-          type="text"
-          value={result}
-          placeholder={item.instructions ? `지시: ${item.instructions}` : '결과 입력...'}
-          onChange={e => setResult(e.target.value)}
-          onBlur={() => onUpdate({ result })}
-          style={cellStyle}
-        />
-      ) : (
-        <input
-          type="text"
-          value={instructions}
-          placeholder="범위 또는 지시내용 직접 입력"
-          onChange={e => setInstructions(e.target.value)}
-          onBlur={() => onUpdate({ instructions })}
-          style={cellStyle}
-        />
-      )}
-
-      {/* 삭제 버튼 */}
-      {!isAssistant ? (
+          <i className={saving ? 'fas fa-spinner fa-spin' : 'fas fa-check'} style={{ fontSize:10 }} />
+          {saving ? '' : ' 저장'}
+        </button>
         <button
           onClick={onDelete}
-          style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', fontSize: 14, padding: 4, transition: 'color 0.15s' }}
-          onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
-          onMouseLeave={e => e.currentTarget.style.color = '#cbd5e1'}
-          title="행 삭제"
+          title="삭제"
+          style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', background:'#fff0f0', border:'1px solid #fecaca', borderRadius:6, fontSize:12, fontWeight:600, color:'#ef4444', cursor:'pointer' }}
+          onMouseEnter={e => e.currentTarget.style.background='#fee2e2'}
+          onMouseLeave={e => e.currentTarget.style.background='#fff0f0'}
         >
-          <i className="fas fa-trash-alt" />
+          <i className="fas fa-trash-alt" style={{ fontSize:10 }} /> 삭제
         </button>
-      ) : (
-        <div />
-      )}
+      </div>
     </div>
   );
 }

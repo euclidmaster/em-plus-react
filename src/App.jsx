@@ -13,6 +13,7 @@ import DashboardPage   from './pages/DashboardPage.jsx';
 import StudentListPage from './pages/StudentListPage.jsx';
 import StudentInfoPage from './pages/StudentInfoPage.jsx';
 import GradePage       from './pages/GradePage.jsx';
+import SubjectGuidePage from './pages/SubjectGuidePage.jsx';
 import WeeklyPlanPage  from './pages/WeeklyPlanPage.jsx';
 import DailyRecordPage from './pages/DailyRecordPage.jsx';
 import HomeworkPage    from './pages/HomeworkPage.jsx';
@@ -117,6 +118,7 @@ function AppLayout() {
                 <Route path="/students"     element={<StudentListPage />} />
                 <Route path="/student-info" element={<StudentInfoPage />} />
                 <Route path="/grades"       element={<GradePage />} />
+                <Route path="/subject-guide" element={<SubjectGuidePage />} />
                 <Route path="/weekly-plan"  element={<WeeklyPlanPage />} />
                 <Route path="/daily-record" element={<DailyRecordPage />} />
                 <Route path="/homework"     element={<HomeworkPage />} />

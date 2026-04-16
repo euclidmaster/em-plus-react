@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [className, setClassName]   = useState('');
   const [schoolName, setSchoolName] = useState('');
   const [phone, setPhone]           = useState('');
+  const [subjects, setSubjects]     = useState([]);
+  const [branch, setBranch]         = useState('');
   const [error, setError]   = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,11 +43,13 @@ export default function LoginPage() {
     setError(''); setSuccess('');
     if (!name || !email || !pw) { setError('모든 항목을 입력하세요.'); return; }
     if (pw.length < 6) { setError('비밀번호는 6자 이상이어야 합니다.'); return; }
+    if (!branch) { setError('수업 지점을 선택하세요.'); return; }
+    if (role === 'student' && subjects.length === 0) { setError('수강 과목을 최소 1개 선택하세요.'); return; }
     setLoading(true);
     try {
       const studentInfo = role === 'student'
-        ? { grade, class_name: className, school_name: schoolName, phone }
-        : null;
+        ? { grade, class_name: className, school_name: schoolName, phone, subjects, branch }
+        : { branch };
       const { data, error: err } = await supabase.auth.signUp({
         email, password: pw,
         options: { data: { name, role, studentInfo } }
@@ -58,7 +62,7 @@ export default function LoginPage() {
         setSuccess('가입 완료! 이메일 인증 후 로그인하세요.');
         setMode('login');
         setName(''); setEmail(''); setPw(''); setRole('student');
-        setGrade(''); setClassName(''); setSchoolName(''); setPhone('');
+        setGrade(''); setClassName(''); setSchoolName(''); setPhone(''); setSubjects([]); setBranch('');
       }
     } catch (err) {
       setError(err.message);
@@ -153,6 +157,31 @@ export default function LoginPage() {
               </select>
             </Field>
 
+            {/* 지점 선택 — 모든 역할 공통 */}
+            <div>
+              <label style={{ display:'block', fontSize:13, fontWeight:600, color:'#475569', marginBottom:8 }}>
+                <i className="fas fa-map-marker-alt" style={{ marginRight:6 }}></i>수업 지점 <span style={{ color:'#ef4444' }}>*</span>
+              </label>
+              <div style={{ display:'flex', gap:8 }}>
+                {['스카이뷰점','정자점'].map(b => {
+                  const selected = branch === b;
+                  return (
+                    <button key={b} type="button" onClick={() => setBranch(b)} style={{
+                      flex:1, padding:'10px 0', borderRadius:10, cursor:'pointer',
+                      fontSize:13, fontWeight:600, fontFamily:'inherit',
+                      border: selected ? '1.5px solid #667eea' : '1.5px solid #e2e8f0',
+                      background: selected ? '#667eea' : '#f8fafc',
+                      color: selected ? '#fff' : '#64748b',
+                      transition:'all .15s',
+                    }}>
+                      {selected && <i className="fas fa-check" style={{ marginRight:5, fontSize:11 }}></i>}
+                      {b}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* 학생일 때만: 학생 정보 직접 입력 */}
             {role === 'student' && (
               <>
@@ -176,6 +205,39 @@ export default function LoginPage() {
                   <input type="text" value={phone} onChange={e=>setPhone(e.target.value)}
                     placeholder="연락처 (선택사항)" style={inputStyle} />
                 </Field>
+                <div>
+                  <label style={{ display:'block', fontSize:13, fontWeight:600, color:'#475569', marginBottom:8 }}>
+                    <i className="fas fa-book" style={{ marginRight:6 }}></i>수강 과목 <span style={{ color:'#ef4444' }}>*</span>
+                    <span style={{ fontWeight:400, color:'#94a3b8', marginLeft:6 }}>(중복 선택 가능)</span>
+                  </label>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                    {['국어','영어','수학','과학','기타'].map(s => {
+                      const checked = subjects.includes(s);
+                      return (
+                        <label key={s} style={{
+                          display:'flex', alignItems:'center', gap:6,
+                          padding:'8px 14px', borderRadius:20, cursor:'pointer',
+                          fontSize:13, fontWeight:600, userSelect:'none',
+                          border: checked ? '1.5px solid #667eea' : '1.5px solid #e2e8f0',
+                          background: checked ? '#eef2ff' : '#f8fafc',
+                          color: checked ? '#667eea' : '#64748b',
+                          transition:'all .15s',
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setSubjects(prev =>
+                              checked ? prev.filter(x => x !== s) : [...prev, s]
+                            )}
+                            style={{ display:'none' }}
+                          />
+                          {checked && <i className="fas fa-check" style={{ fontSize:11 }}></i>}
+                          {s}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
               </>
             )}
 

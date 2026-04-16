@@ -29,12 +29,15 @@ export function AuthProvider({ children }) {
         const patch = {};
         if (metaRole && data.role !== metaRole) patch.role = metaRole;
         if (metaName && data.name !== metaName) patch.name = metaName;
+        // 지점은 모든 역할 공통 저장
+        if (studentInfo.branch)                         patch.branch      = studentInfo.branch;
         // 학생이면 추가 정보도 저장
         if ((metaRole ?? data.role) === 'student' && studentInfo) {
-          if (studentInfo.grade)       patch.grade       = studentInfo.grade;
-          if (studentInfo.class_name)  patch.class_name  = studentInfo.class_name;
-          if (studentInfo.school_name) patch.school_name = studentInfo.school_name;
-          if (studentInfo.phone)       patch.phone       = studentInfo.phone;
+          if (studentInfo.grade)                        patch.grade       = studentInfo.grade;
+          if (studentInfo.class_name)                   patch.class_name  = studentInfo.class_name;
+          if (studentInfo.school_name)                  patch.school_name = studentInfo.school_name;
+          if (studentInfo.phone)                        patch.phone       = studentInfo.phone;
+          if (studentInfo.subjects?.length)             patch.subjects    = studentInfo.subjects;
         }
         const { data: updated } = await supabase.from('profiles').update(patch).eq('id', u.id).select().single();
         prof = updated ?? { ...data, ...patch };
@@ -47,11 +50,13 @@ export function AuthProvider({ children }) {
         id:   u.id,
         name: metaName ?? u.email,
         role: metaRole ?? 'student',
+        branch: studentInfo.branch ?? null,
         ...(metaRole === 'student' && studentInfo ? {
           grade:       studentInfo.grade       ?? null,
           class_name:  studentInfo.class_name  ?? null,
           school_name: studentInfo.school_name ?? null,
           phone:       studentInfo.phone       ?? null,
+          subjects:    studentInfo.subjects    ?? [],
         } : {}),
       };
       await supabase.from('profiles').upsert(fallback);

@@ -53,7 +53,7 @@ export default function StudentWeeklyPlanPage() {
 
   async function save() {
     try {
-      await Promise.all(plans.filter(p => p.subject).map(p => upsertWeeklyPlan(p)));
+      await Promise.all(plans.filter(p => p.subject).map(p => upsertWeeklyPlan({ ...p, week_label: weekStart })));
       showToast('주간 플랜이 저장되었습니다.');
       load();
     } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }

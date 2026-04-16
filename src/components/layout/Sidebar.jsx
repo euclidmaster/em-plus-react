@@ -10,6 +10,7 @@ const ADMIN_NAV = [
     { to: '/students',      icon: 'fa-users',             label: '학생 명단' },
     { to: '/student-info',  icon: 'fa-user-graduate',     label: '개인정보 관리', permission: 'can_view_personal_info' },
     { to: '/grades',        icon: 'fa-chart-bar',         label: '성적 관리',     permission: 'can_view_grades' },
+    { to: '/subject-guide', icon: 'fa-graduation-cap',    label: '교과선택 가이드' },
   ]},
   { group: '학습 현황', icon: 'fa-book-open', items: [
     { to: '/weekly-plan',   icon: 'fa-calendar-week',     label: '주간 학습 플랜' },

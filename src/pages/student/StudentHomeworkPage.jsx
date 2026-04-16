@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStudentSelf } from '../../hooks/useStudentSelf.js';
-import { getHomeworks, toggleHomework } from '../../lib/api.js';
+import { getHomeworks } from '../../lib/api.js';
 import { useToast } from '../../components/common/Toast.jsx';
 
 export default function StudentHomeworkPage() {
@@ -16,14 +16,6 @@ export default function StudentHomeworkPage() {
   async function load() {
     try { setHomeworks(await getHomeworks(student.id)); }
     catch { showToast('숙제 로드 실패', 'error'); }
-  }
-
-  async function toggle(id, isDone) {
-    try {
-      await toggleHomework(id, isDone);
-      showToast(isDone ? '숙제 완료!' : '완료 취소');
-      load();
-    } catch { showToast('처리 실패', 'error'); }
   }
 
   if (loading) return <div style={{ padding:40, textAlign:'center', color:'#94a3b8' }}>로딩 중...</div>;
@@ -76,7 +68,7 @@ export default function StudentHomeworkPage() {
         <table style={{ width:'100%', borderCollapse:'collapse' }}>
           <thead>
             <tr style={{ background:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-              {['완료','마감일','과목','교재','범위'].map(h => (
+              {['완료 여부','마감일','과목','교재','범위'].map(h => (
                 <th key={h} style={{ padding:'10px 14px', textAlign:'left', fontSize:13, color:'#64748b', fontWeight:600 }}>{h}</th>
               ))}
             </tr>
@@ -88,9 +80,11 @@ export default function StudentHomeworkPage() {
                 const overdue = !hw.is_done && hw.due_date < new Date().toISOString().slice(0,10);
                 return (
                   <tr key={hw.id} style={{ borderBottom:'1px solid #f1f5f9', opacity: hw.is_done ? 0.55 : 1, background: overdue ? '#fff5f5' : '' }}>
-                    <td style={{ padding:'10px 14px' }}>
-                      <input type="checkbox" checked={hw.is_done} onChange={e => toggle(hw.id, e.target.checked)}
-                        style={{ width:18, height:18, cursor:'pointer', accentColor:'#4361ee' }} />
+                    <td style={{ padding:'10px 14px', textAlign:'center' }}>
+                      {hw.is_done
+                        ? <i className="fas fa-check-circle" style={{ color:'#16a34a', fontSize:16 }}></i>
+                        : <i className="far fa-circle" style={{ color:'#cbd5e1', fontSize:16 }}></i>
+                      }
                     </td>
                     <td style={{ padding:'10px 14px', fontSize:13 }}>
                       <span style={{ color: overdue ? '#dc2626' : '#1e293b', fontWeight: overdue ? 700 : 400 }}>
