@@ -356,14 +356,20 @@ function ResultView({ school, grade, name, univ, dept, onBack, onReset }) {
           ))}
           {matchInfo.coreNotFound.map((c,i) => (
             <li key={i} style={{ padding:'7px 0', borderBottom:'1px solid #dbeafe', fontSize:13, display:'flex', alignItems:'flex-start', gap:8 }}>
-              <i className="fas fa-exclamation-triangle" style={{ color:'#f59e0b', marginTop:2 }}></i>
-              <span><strong>⚠️ 주의:</strong> <strong>{c}</strong>은(는) {school}등학교 편제표에서 확인되지 않습니다. 공동교육과정 등 대안을 찾아보세요.</span>
+              <i className={grade==='고1' ? 'fas fa-calendar-check' : 'fas fa-exclamation-triangle'} style={{ color: grade==='고1' ? '#4361ee' : '#f59e0b', marginTop:2 }}></i>
+              {grade==='고1'
+                ? <span><strong>📘 핵심:</strong> <strong>{c}</strong>은(는) 고2·고3 때 반드시 선택하세요. (대학 이수 필수)</span>
+                : <span><strong>⚠️ 주의:</strong> <strong>{c}</strong>은(는) {school}등학교 편제표에서 확인되지 않습니다. 공동교육과정 등 대안을 찾아보세요.</span>
+              }
             </li>
           ))}
           {matchInfo.recNotFound.map((r,i) => (
             <li key={i} style={{ padding:'7px 0', borderBottom:'1px solid #dbeafe', fontSize:13, display:'flex', alignItems:'flex-start', gap:8, color:'#94a3b8' }}>
               <i className="fas fa-info-circle" style={{ marginTop:2 }}></i>
-              <span><strong>{r}</strong>은(는) 편제표에서 확인되지 않습니다. (권장사항)</span>
+              {grade==='고1'
+                ? <span><strong>{r}</strong>은(는) 고2·고3 때 선택을 적극 권고합니다.</span>
+                : <span><strong>{r}</strong>은(는) 편제표에서 확인되지 않습니다. (권장사항)</span>
+              }
             </li>
           ))}
           {deptData.core.length===0 && deptData.recommended.length===0 && (
