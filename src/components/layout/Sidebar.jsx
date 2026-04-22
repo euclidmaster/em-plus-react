@@ -1,6 +1,6 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { useState } from 'react';
+import { useState, memo } from 'react';
 
 const ADMIN_NAV = [
   { group: '대시보드', icon: 'fa-home', items: [
@@ -47,7 +47,7 @@ const STUDENT_NAV = [
   ]},
 ];
 
-export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
+const Sidebar = memo(function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   const { user, profile, signOut, teacherPermissions } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -55,14 +55,10 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
 
   const nav = role === 'student' ? STUDENT_NAV : ADMIN_NAV;
 
-  // 현재 경로가 속한 그룹을 초기 열림 상태로
+  // 모든 그룹을 기본으로 열린 상태로
   const getInitialOpen = () => {
     const set = new Set();
-    nav.forEach(g => {
-      if (g.items.some(item => pathname === item.to || pathname.startsWith(item.to + '/'))) {
-        set.add(g.group);
-      }
-    });
+    nav.forEach(g => set.add(g.group));
     return set;
   };
   const [openGroups, setOpenGroups] = useState(getInitialOpen);
@@ -180,4 +176,6 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
       </aside>
     </>
   );
-}
+});
+
+export default Sidebar;

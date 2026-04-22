@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { ToastProvider } from './components/common/Toast.jsx';
@@ -8,38 +8,39 @@ import TopHeader from './components/layout/TopHeader.jsx';
 import MessageNotificationBanner from './components/common/MessageNotificationBanner.jsx';
 import { useMessageNotification } from './hooks/useMessageNotification.js';
 
-import LoginPage       from './pages/LoginPage.jsx';
-import DashboardPage   from './pages/DashboardPage.jsx';
-import StudentListPage from './pages/StudentListPage.jsx';
-import StudentInfoPage from './pages/StudentInfoPage.jsx';
-import GradePage       from './pages/GradePage.jsx';
-import SubjectGuidePage from './pages/SubjectGuidePage.jsx';
-import WeeklyPlanPage  from './pages/WeeklyPlanPage.jsx';
-import DailyRecordPage from './pages/DailyRecordPage.jsx';
-import HomeworkPage    from './pages/HomeworkPage.jsx';
-import PerformancePage from './pages/PerformancePage.jsx';
-import ClinicPage       from './pages/ClinicPage.jsx';
-import ClinicReportPage from './pages/ClinicReportPage.jsx';
-import ReportPage      from './pages/ReportPage.jsx';
-import BoardPage       from './pages/BoardPage.jsx';
-import AttendancePage  from './pages/AttendancePage.jsx';
-import TeacherPage          from './pages/TeacherPage.jsx';
-import AccountApprovalPage  from './pages/AccountApprovalPage.jsx';
-import ProfilePage          from './pages/ProfilePage.jsx';
-import MessagesPage         from './pages/MessagesPage.jsx';
+// 페이지는 필요할 때만 로드 (코드 스플리팅)
+const LoginPage            = lazy(() => import('./pages/LoginPage.jsx'));
+const DashboardPage        = lazy(() => import('./pages/DashboardPage.jsx'));
+const StudentListPage      = lazy(() => import('./pages/StudentListPage.jsx'));
+const StudentInfoPage      = lazy(() => import('./pages/StudentInfoPage.jsx'));
+const GradePage            = lazy(() => import('./pages/GradePage.jsx'));
+const SubjectGuidePage     = lazy(() => import('./pages/SubjectGuidePage.jsx'));
+const WeeklyPlanPage       = lazy(() => import('./pages/WeeklyPlanPage.jsx'));
+const DailyRecordPage      = lazy(() => import('./pages/DailyRecordPage.jsx'));
+const HomeworkPage         = lazy(() => import('./pages/HomeworkPage.jsx'));
+const PerformancePage      = lazy(() => import('./pages/PerformancePage.jsx'));
+const ClinicPage           = lazy(() => import('./pages/ClinicPage.jsx'));
+const ClinicReportPage     = lazy(() => import('./pages/ClinicReportPage.jsx'));
+const ReportPage           = lazy(() => import('./pages/ReportPage.jsx'));
+const BoardPage            = lazy(() => import('./pages/BoardPage.jsx'));
+const AttendancePage       = lazy(() => import('./pages/AttendancePage.jsx'));
+const TeacherPage          = lazy(() => import('./pages/TeacherPage.jsx'));
+const AccountApprovalPage  = lazy(() => import('./pages/AccountApprovalPage.jsx'));
+const ProfilePage          = lazy(() => import('./pages/ProfilePage.jsx'));
+const MessagesPage         = lazy(() => import('./pages/MessagesPage.jsx'));
 
 // 학생 전용 페이지
-import StudentHomePage        from './pages/student/StudentHomePage.jsx';
-import StudentAttendancePage  from './pages/student/StudentAttendancePage.jsx';
-import StudentWeeklyPlanPage  from './pages/student/StudentWeeklyPlanPage.jsx';
-import StudentDailyRecordPage from './pages/student/StudentDailyRecordPage.jsx';
-import StudentHomeworkPage    from './pages/student/StudentHomeworkPage.jsx';
-import StudentPerformancePage from './pages/student/StudentPerformancePage.jsx';
-import StudentReportPage      from './pages/student/StudentReportPage.jsx';
-import StudentChatPage        from './pages/student/StudentChatPage.jsx';
+const StudentHomePage        = lazy(() => import('./pages/student/StudentHomePage.jsx'));
+const StudentAttendancePage  = lazy(() => import('./pages/student/StudentAttendancePage.jsx'));
+const StudentWeeklyPlanPage  = lazy(() => import('./pages/student/StudentWeeklyPlanPage.jsx'));
+const StudentDailyRecordPage = lazy(() => import('./pages/student/StudentDailyRecordPage.jsx'));
+const StudentHomeworkPage    = lazy(() => import('./pages/student/StudentHomeworkPage.jsx'));
+const StudentPerformancePage = lazy(() => import('./pages/student/StudentPerformancePage.jsx'));
+const StudentReportPage      = lazy(() => import('./pages/student/StudentReportPage.jsx'));
+const StudentChatPage        = lazy(() => import('./pages/student/StudentChatPage.jsx'));
 
 function AppLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { profile } = useAuth();
   const role = profile?.role ?? 'admin';
@@ -67,35 +68,42 @@ function AppLayout() {
     }
   }, [location.pathname, role, markAllRead]);
 
-  const handleBellClick = () => {
+  const handleBellClick = useCallback(() => {
     const chatPath = role === 'student' ? '/my/chat' : '/messages';
     markAllRead();
     setBannerVisible(false);
     navigate(chatPath);
-  };
+  }, [role, markAllRead, navigate]);
+
+  const handleMenuToggle  = useCallback(() => setSidebarOpen(o => !o), []);
+  const handleSidebarClose = useCallback(() => setSidebarOpen(false), []);
+  const handleSidebarCollapse = useCallback(() => setSidebarCollapsed(o => !o), []);
+  const handleBannerDismiss = useCallback(() => setBannerVisible(false), []);
+  const handleBannerRead = useCallback(() => { markAllRead(); setBannerVisible(false); }, [markAllRead]);
 
   return (
     <div className={`app-wrapper${sidebarCollapsed ? ' sidebar-hidden' : ''}`}>
       <Sidebar
         open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
+        onClose={handleSidebarClose}
         collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(o => !o)}
+        onToggleCollapse={handleSidebarCollapse}
       />
       <main className="main-content">
         <TopHeader
-          onMenuToggle={() => setSidebarOpen(o => !o)}
+          onMenuToggle={handleMenuToggle}
           unreadCount={unreadCount}
           onBellClick={handleBellClick}
         />
         {bannerVisible && (
           <MessageNotificationBanner
             unreadMessages={unreadMessages}
-            onDismiss={() => setBannerVisible(false)}
-            onRead={() => { markAllRead(); setBannerVisible(false); }}
+            onDismiss={handleBannerDismiss}
+            onRead={handleBannerRead}
           />
         )}
         <div className="content-area">
+          <Suspense fallback={<div className="page-loading">로딩 중...</div>}>
           <Routes>
             {role === 'student' ? (
               /* ── 학생 전용 라우트 ── */
@@ -136,6 +144,7 @@ function AppLayout() {
               </>
             )}
           </Routes>
+          </Suspense>
         </div>
       </main>
     </div>
@@ -147,14 +156,16 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/*" element={
-              <ProtectedRoute>
-                <AppLayout />
-              </ProtectedRoute>
-            } />
-          </Routes>
+          <Suspense fallback={<div className="page-loading">로딩 중...</div>}>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/*" element={
+                <ProtectedRoute>
+                  <AppLayout />
+                </ProtectedRoute>
+              } />
+            </Routes>
+          </Suspense>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
