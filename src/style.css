@@ -151,20 +151,20 @@ body {
 .nav-group-toggle {
   width: 100%;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 20px;
-  background: none; border: none; cursor: pointer;
+  padding: 11px 20px;
+  background: #1a2744; border: none; cursor: pointer;
   color: #c7d2fe;
-  font-size: 13px; font-weight: 700;
+  font-size: 17px; font-weight: 700;
   letter-spacing: 0.4px;
   transition: var(--transition);
   text-shadow: 0 0 8px rgba(199, 210, 254, 0.3);
 }
-.nav-group-toggle:hover { background: #1e293b; color: #e0e7ff; text-shadow: 0 0 10px rgba(224, 231, 255, 0.5); }
-.nav-group-toggle.has-active { color: #a5b4fc; text-shadow: 0 0 10px rgba(165, 180, 252, 0.5); }
+.nav-group-toggle:hover { background: #1e3060; color: #e0e7ff; text-shadow: 0 0 10px rgba(224, 231, 255, 0.5); }
+.nav-group-toggle.has-active { background: #1e3060; color: #a5b4fc; text-shadow: 0 0 10px rgba(165, 180, 252, 0.5); }
 
 .nav-group-toggle-left { display: flex; align-items: center; gap: 8px; }
-.nav-group-toggle-left i { font-size: 13px; width: 16px; text-align: center; }
-.nav-group-toggle-label { font-size: 13px; }
+.nav-group-toggle-left i { font-size: 15px; width: 18px; text-align: center; }
+.nav-group-toggle-label { font-size: 17px; }
 .nav-group-arrow { font-size: 14px; opacity: 1; color: #c7d2fe; filter: drop-shadow(0 0 1px #c7d2fe); }
 
 /* 아코디언 하위 메뉴 */
