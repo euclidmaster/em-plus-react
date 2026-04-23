@@ -20,6 +20,7 @@ const DailyRecordPage      = lazy(() => import('./pages/DailyRecordPage.jsx'));
 const HomeworkPage         = lazy(() => import('./pages/HomeworkPage.jsx'));
 const PerformancePage      = lazy(() => import('./pages/PerformancePage.jsx'));
 const ClinicPage           = lazy(() => import('./pages/ClinicPage.jsx'));
+const RoutinePage          = lazy(() => import('./pages/RoutinePage.jsx'));
 const ClinicReportPage     = lazy(() => import('./pages/ClinicReportPage.jsx'));
 const ReportPage           = lazy(() => import('./pages/ReportPage.jsx'));
 const BoardPage            = lazy(() => import('./pages/BoardPage.jsx'));
@@ -131,6 +132,7 @@ function AppLayout() {
                 <Route path="/daily-record" element={<DailyRecordPage />} />
                 <Route path="/homework"     element={<HomeworkPage />} />
                 <Route path="/performance"  element={<PerformancePage />} />
+                <Route path="/routine"       element={<RoutinePage />} />
                 <Route path="/clinic"        element={<ClinicPage />} />
                 <Route path="/clinic-report" element={<ClinicReportPage />} />
                 <Route path="/report"       element={<ReportPage />} />

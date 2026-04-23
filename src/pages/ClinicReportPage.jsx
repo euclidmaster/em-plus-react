@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStudentList } from '../hooks/useStudentList.js';
-import { getClinicReportData } from '../lib/api.js';
+import { getClinicReportData, getRoutineMonthlyData } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 
 const SUBJECT_COLORS = {
@@ -19,13 +19,14 @@ export default function ClinicReportPage() {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  const [studentId,  setStudentId]  = useState('');
-  const [yearMonth,  setYearMonth]  = useState(defaultMonth);
-  const [items,      setItems]      = useState([]);
-  const [loading,    setLoading]    = useState(false);
-  const [viewMode,   setViewMode]   = useState('report');   // 'report' | 'ai'
-  const [aiSummary,  setAiSummary]  = useState('');
-  const [aiLoading,  setAiLoading]  = useState(false);
+  const [studentId,    setStudentId]    = useState('');
+  const [yearMonth,    setYearMonth]    = useState(defaultMonth);
+  const [items,        setItems]        = useState([]);
+  const [routineData,  setRoutineData]  = useState({ templates: [], logs: [] });
+  const [loading,      setLoading]      = useState(false);
+  const [viewMode,     setViewMode]     = useState('report');   // 'report' | 'ai'
+  const [aiSummary,    setAiSummary]    = useState('');
+  const [aiLoading,    setAiLoading]    = useState(false);
 
   const student = students.find(s => s.id === studentId);
 
@@ -41,7 +42,12 @@ export default function ClinicReportPage() {
   async function loadData() {
     setLoading(true);
     try {
-      setItems(await getClinicReportData(studentId, yearMonth));
+      const [clinic, routine] = await Promise.all([
+        getClinicReportData(studentId, yearMonth),
+        getRoutineMonthlyData(studentId, yearMonth).catch(() => ({ templates: [], logs: [] })),
+      ]);
+      setItems(clinic);
+      setRoutineData(routine);
     } catch (e) {
       showToast('데이터 로드 실패: ' + e.message, 'error');
       setItems([]);
@@ -150,7 +156,7 @@ export default function ClinicReportPage() {
         {/* 통계 요약 카드 */}
         {hasData && (
           <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-            <StatCard label="총 클리닉 횟수" value={`${totalCount}회`} color="#4361ee" />
+            <StatCard label="총 결과보고 횟수" value={`${totalCount}회`} color="#4361ee" />
             <StatCard label="참여 과목 수" value={`${Object.keys(grouped).length}개`} color="#22c55e" />
             {Object.entries(grouped).map(([subj, arr]) => (
               <StatCard key={subj} label={subj} value={`${arr.length}회`} color={getSubjectColor(subj)} />
@@ -190,9 +196,16 @@ export default function ClinicReportPage() {
                       key={subject}
                       subject={subject}
                       items={subItems}
-                      isLast={idx === Object.keys(grouped).length - 1}
+                      isLast={idx === Object.keys(grouped).length - 1 && routineData.templates.length === 0}
                     />
                   ))}
+                  {routineData.templates.length > 0 && (
+                    <RoutineReportSection
+                      templates={routineData.templates}
+                      logs={routineData.logs}
+                      monthLabel={monthLabel}
+                    />
+                  )}
                 </>
               )}
 
@@ -315,7 +328,7 @@ function ReportHeader({ studentName, monthLabel, totalCount }) {
       <div style={{ fontSize: 16, opacity: 0.9 }}>
         <strong style={{ fontSize: 18 }}>{studentName}</strong>
         &ensp;|&ensp;{monthLabel}
-        &ensp;|&ensp;총 <strong>{totalCount}회</strong> 참여
+        &ensp;|&ensp;총 <strong>{totalCount}회</strong> 결과보고
       </div>
     </div>
   );
@@ -342,8 +355,7 @@ function SubjectSection({ subject, items, isLast }) {
           <tr style={{ background: '#f8fafc' }}>
             <th style={{ ...th, width: 80 }}>날짜</th>
             <th style={{ ...th, width: 120 }}>클리닉 유형</th>
-            <th style={{ ...th, width: 200 }}>지시내용</th>
-            <th style={{ ...th, textAlign: 'left' }}>결과 / 특이사항</th>
+            <th style={{ ...th, textAlign: 'left' }}>결과보고</th>
           </tr>
         </thead>
         <tbody>
@@ -358,11 +370,94 @@ function SubjectSection({ subject, items, isLast }) {
                     {item.clinic_type || '—'}
                   </span>
                 </td>
-                <td style={{ ...td, color: '#64748b', fontSize: 12 }}>
-                  {item.instructions || <span style={{ color: '#cbd5e1' }}>—</span>}
+                <td style={{ ...td, textAlign: 'left', color: '#1e293b' }}>
+                  {item.instructions && (
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
+                      지시: {item.instructions}
+                    </div>
+                  )}
+                  <div style={{ fontWeight: 600, color: item.result ? '#1e293b' : '#94a3b8' }}>
+                    {item.result || <span style={{ fontStyle: 'italic', fontWeight: 400 }}>미입력</span>}
+                  </div>
                 </td>
-                <td style={{ ...td, textAlign: 'left', color: item.result ? '#1e293b' : '#94a3b8', fontWeight: item.result ? 500 : 400 }}>
-                  {item.result || <span style={{ color: '#cbd5e1', fontStyle: 'italic' }}>미입력</span>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   루틴 현황 섹션 (리포트 내 삽입)
+───────────────────────────────────────────── */
+const ROUTINE_SUBJECT_COLORS = {
+  '영어': '#4361ee', '수학': '#22c55e', '과학': '#f59e0b',
+  '국어': '#ef4444', '사회': '#8b5cf6', '기타': '#64748b',
+};
+function rsc(s) { return ROUTINE_SUBJECT_COLORS[s] ?? '#64748b'; }
+
+function RoutineReportSection({ templates, logs, monthLabel }) {
+  const byTemplate = {};
+  templates.forEach(t => { byTemplate[t.id] = { done: 0, total: 0, comments: [] }; });
+  logs.forEach(l => {
+    if (!byTemplate[l.template_id]) return;
+    byTemplate[l.template_id].total += 1;
+    if (l.is_done) byTemplate[l.template_id].done += 1;
+    if (l.comment) byTemplate[l.template_id].comments.push(l.comment);
+  });
+
+  const overallDone  = Object.values(byTemplate).reduce((s, v) => s + v.done, 0);
+  const overallTotal = Object.values(byTemplate).reduce((s, v) => s + v.total, 0);
+  const overallPct   = overallTotal ? Math.round((overallDone / overallTotal) * 100) : 0;
+
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 4, height: 22, background: '#7c3aed', borderRadius: 2 }} />
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>루틴 체크 현황</span>
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed', background: '#7c3aed18', padding: '3px 10px', borderRadius: 20 }}>
+          {monthLabel} 전체 달성률 {overallPct}%
+        </span>
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ background: '#f8fafc' }}>
+            <th style={{ ...th, textAlign: 'left' }}>루틴 항목</th>
+            <th style={{ ...th, width: 60 }}>과목</th>
+            <th style={{ ...th, width: 80 }}>완료 / 체크</th>
+            <th style={{ ...th, width: 70 }}>달성률</th>
+            <th style={{ ...th, textAlign: 'left' }}>주요 코멘트</th>
+          </tr>
+        </thead>
+        <tbody>
+          {templates.map((t, i) => {
+            const stat  = byTemplate[t.id] ?? { done: 0, total: 0, comments: [] };
+            const pct   = stat.total ? Math.round((stat.done / stat.total) * 100) : 0;
+            const color = rsc(t.subject);
+            return (
+              <tr key={t.id} style={{ background: i % 2 === 1 ? '#f8fafc' : '#fff' }}>
+                <td style={{ ...td, textAlign: 'left', fontWeight: 500, color: '#1e293b' }}>{t.title}</td>
+                <td style={td}>
+                  <span style={{ background: `${color}15`, color, padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>{t.subject}</span>
+                </td>
+                <td style={{ ...td, color: '#64748b', fontWeight: 600 }}>{stat.done} / {stat.total}</td>
+                <td style={td}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ flex: 1, height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#f87171', borderRadius: 3 }} />
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#f87171', minWidth: 32 }}>{pct}%</span>
+                  </div>
+                </td>
+                <td style={{ ...td, textAlign: 'left', color: '#64748b', fontSize: 12 }}>
+                  {stat.comments.length > 0
+                    ? stat.comments.slice(-2).join(' / ')
+                    : <span style={{ fontStyle: 'italic', color: '#cbd5e1' }}>코멘트 없음</span>}
                 </td>
               </tr>
             );

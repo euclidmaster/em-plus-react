@@ -16,6 +16,7 @@ const ADMIN_NAV = [
     { to: '/weekly-plan',   icon: 'fa-calendar-week',     label: '주간 학습 플랜' },
     { to: '/daily-record',  icon: 'fa-book-open',         label: '일일 학습 기록' },
     { to: '/homework',      icon: 'fa-tasks',             label: '숙제 관리' },
+    { to: '/routine',       icon: 'fa-clipboard-list',    label: '루틴 체크리스트' },
     { to: '/performance',   icon: 'fa-clipboard-check',   label: '수행 관리' },
     { to: '/clinic',        icon: 'fa-stethoscope',       label: '클리닉 관리' },
     { to: '/clinic-report', icon: 'fa-file-medical-alt',  label: '클리닉 리포트' },

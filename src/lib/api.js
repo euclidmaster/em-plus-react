@@ -501,6 +501,15 @@ export async function sendMessage(payload) {
   if (error) throw error;
   return data;
 }
+export async function updateMessage(id, content) {
+  const { data, error } = await supabase.from('messages').update({ content }).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteMessage(id) {
+  const { error } = await supabase.from('messages').delete().eq('id', id);
+  if (error) throw error;
+}
 
 // ==================== 게시판 ====================
 export async function getBoardPosts() {
@@ -549,6 +558,113 @@ export async function getTodaySchedule() {
   if (error) throw error;
   return data;
 }
+// ==================== 루틴 체크리스트 ====================
+// Supabase에 아래 두 테이블 필요:
+//
+// create table routine_templates (
+//   id uuid primary key default gen_random_uuid(),
+//   student_id uuid references students(id) on delete cascade not null,
+//   title text not null,
+//   subject text default '',
+//   sort_order int default 0,
+//   created_by uuid references profiles(id),
+//   created_at timestamptz default now()
+// );
+//
+// create table routine_logs (
+//   id uuid primary key default gen_random_uuid(),
+//   template_id uuid references routine_templates(id) on delete cascade not null,
+//   student_id uuid references students(id) on delete cascade not null,
+//   log_date date not null default current_date,
+//   is_done boolean default false,
+//   comment text default '',
+//   checked_by uuid references profiles(id),
+//   checked_by_name text default '',
+//   created_at timestamptz default now(),
+//   unique(template_id, log_date)
+// );
+//
+// RLS (Supabase Dashboard > Table Editor > RLS):
+// routine_templates: SELECT / INSERT / UPDATE / DELETE — auth.role() = 'authenticated'
+// routine_logs: 동일
+
+export async function getRoutineTemplates(studentId) {
+  const { data, error } = await supabase
+    .from('routine_templates')
+    .select('*')
+    .eq('student_id', studentId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+export async function createRoutineTemplate(payload) {
+  const { data, error } = await supabase.from('routine_templates').insert(payload).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function updateRoutineTemplate(id, payload) {
+  const { data, error } = await supabase.from('routine_templates').update(payload).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteRoutineTemplate(id) {
+  const { error } = await supabase.from('routine_templates').delete().eq('id', id);
+  if (error) throw error;
+}
+
+export async function getRoutineLogs(studentId, date) {
+  const { data, error } = await supabase
+    .from('routine_logs')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('log_date', date);
+  if (error) throw error;
+  return data ?? [];
+}
+export async function upsertRoutineLog(payload) {
+  const { id, ...rest } = payload;
+  if (id) {
+    const { data, error } = await supabase.from('routine_logs').update(rest).eq('id', id).select().single();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase
+    .from('routine_logs')
+    .upsert(rest, { onConflict: 'template_id,log_date' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function getRoutineHistory(studentId) {
+  const since = new Date();
+  since.setDate(since.getDate() - 13);
+  const { data, error } = await supabase
+    .from('routine_logs')
+    .select('*')
+    .eq('student_id', studentId)
+    .gte('log_date', since.toISOString().slice(0, 10))
+    .order('log_date', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+export async function getRoutineMonthlyData(studentId, yearMonth) {
+  const [year, month] = yearMonth.split('-');
+  const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+  const [tmpl, lgRes] = await Promise.all([
+    getRoutineTemplates(studentId),
+    supabase
+      .from('routine_logs')
+      .select('*')
+      .eq('student_id', studentId)
+      .gte('log_date', `${yearMonth}-01`)
+      .lte('log_date', `${yearMonth}-${String(lastDay).padStart(2, '0')}`),
+  ]);
+  if (lgRes.error) throw lgRes.error;
+  return { templates: tmpl, logs: lgRes.data ?? [] };
+}
+
 export async function getDashboardStats() {
   const today = new Date().toISOString().slice(0, 10);
   const monday = getMondayOfWeek(new Date()).toISOString().slice(0, 10);
@@ -681,6 +797,14 @@ export async function rejectProfile(id) {
 //   sort_order int default 0,
 //   created_at timestamptz default now()
 // );
+// create table if not exists clinic_replies (
+//   id uuid default gen_random_uuid() primary key,
+//   item_id uuid references clinic_items(id) on delete cascade not null,
+//   author_id uuid references teachers(id) on delete set null,
+//   author_name text default '',
+//   content text default '',
+//   created_at timestamptz default now()
+// );
 export async function getClinicSessions(date) {
   const { data, error } = await supabase
     .from('clinic_sessions')
@@ -691,7 +815,8 @@ export async function getClinicSessions(date) {
       clinic_items (
         id, session_id, student_id, subject, clinic_type,
         instructions, result, sort_order, created_at,
-        students (id, name)
+        students (id, name),
+        clinic_replies (id, item_id, author_id, author_name, content, created_at)
       )
     `)
     .eq('session_date', date)
@@ -756,6 +881,32 @@ export async function deleteClinicItem(id) {
   const { error } = await supabase.from('clinic_items').delete().eq('id', id);
   if (error) throw error;
 }
+
+// ==================== 클리닉 보고 (replies) ====================
+export async function createClinicReply(payload) {
+  const { data, error } = await supabase
+    .from('clinic_replies')
+    .insert(payload)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function updateClinicReply(id, content) {
+  const { data, error } = await supabase
+    .from('clinic_replies')
+    .update({ content })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteClinicReply(id) {
+  const { error } = await supabase.from('clinic_replies').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function getClinicReportData(studentId, yearMonth) {
   const [year, month] = yearMonth.split('-');
   const start = `${yearMonth}-01`;
@@ -775,13 +926,36 @@ export async function getClinicReportData(studentId, yearMonth) {
 
   const { data: items, error: iErr } = await supabase
     .from('clinic_items')
-    .select('id, session_id, subject, clinic_type, instructions, result')
+    .select('id, session_id, subject, clinic_type, instructions')
     .eq('student_id', studentId)
     .in('session_id', sessionIds);
   if (iErr) throw iErr;
+  if (!items?.length) return [];
 
-  return (items ?? [])
-    .map(item => ({ ...item, session: sessionMap[item.session_id] ?? null }))
+  const itemIds = items.map(i => i.id);
+  const itemMap = Object.fromEntries(items.map(i => [i.id, i]));
+
+  const { data: replies, error: rErr } = await supabase
+    .from('clinic_replies')
+    .select('id, item_id, author_name, content, created_at')
+    .in('item_id', itemIds)
+    .order('created_at');
+  if (rErr) throw rErr;
+
+  return (replies ?? [])
+    .map(reply => {
+      const item = itemMap[reply.item_id];
+      const session = item ? (sessionMap[item.session_id] ?? null) : null;
+      return {
+        id: reply.id,
+        subject: item?.subject ?? '',
+        clinic_type: item?.clinic_type ?? '',
+        instructions: item?.instructions ?? '',
+        result: reply.content,
+        author: reply.author_name,
+        session,
+      };
+    })
     .sort((a, b) => (a.session?.session_date ?? '') > (b.session?.session_date ?? '') ? 1 : -1);
 }
 
