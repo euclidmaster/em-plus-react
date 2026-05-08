@@ -37,7 +37,8 @@ export function useStudentList() {
         }
 
         if (teacherMap.size === 0) {
-          setStudents([]);
+          // 교사 레코드를 찾지 못한 경우 전체 학생 목록으로 폴백
+          setStudents(await getStudents());
           return;
         }
 
