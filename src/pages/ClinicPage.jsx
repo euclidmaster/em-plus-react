@@ -5,6 +5,7 @@ import {
   getTeachers, getStudents, getTeacherByProfileId,
   getClinicSessions, createClinicSession, updateClinicSession, deleteClinicSession,
   createClinicItem, updateClinicItem, deleteClinicItem,
+  createClinicReply, updateClinicReply, deleteClinicReply,
 } from '../lib/api.js';
 
 const SUBJECTS    = ['영어', '수학', '과학', '국어', '사회', '기타'];
@@ -30,16 +31,15 @@ export default function ClinicPage() {
 
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate]               = useState(today);
-  // 당일이거나 원장이면 편집 가능
-  const canEdit = isAdmin || date === today;
+  const canEdit = isAdmin || date >= today;
   const [sessions, setSessions]       = useState([]);
   const [teachers, setTeachers]       = useState([]);
   const [students, setStudents]       = useState([]);
   const [myRecord, setMyRecord]       = useState(null);
+  const [myRecordLoaded, setMyRecordLoaded] = useState(false);
   const [loading, setLoading]         = useState(true);
   const [dbError, setDbError]         = useState(false);
 
-  /* 참조 데이터 로드 */
   useEffect(() => {
     async function init() {
       try {
@@ -50,6 +50,7 @@ export default function ClinicPage() {
           const rec = await getTeacherByProfileId(profile.id);
           setMyRecord(rec);
         }
+        setMyRecordLoaded(true);
       } catch (e) {
         showToast('참조 데이터 로드 실패', 'error');
       }
@@ -57,22 +58,19 @@ export default function ClinicPage() {
     init();
   }, [profile?.id, role]);
 
-  /* 세션 로드: teacher/assistant는 myRecord가 확인된 후에만 조회 */
   useEffect(() => {
     const needsRecord = role === 'teacher' || role === 'assistant';
-    if (needsRecord && myRecord === null) return; // myRecord 로드 대기
+    if (needsRecord && !myRecordLoaded) return;
     loadSessions();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, myRecord, role]);
+  }, [date, myRecordLoaded, role]);
 
   async function loadSessions() {
     setLoading(true);
     setDbError(false);
     try {
       let data = await getClinicSessions(date);
-      if (role === 'teacher' && myRecord) {
-        data = data.filter(s => s.teacher_id === myRecord.id);
-      } else if (role === 'assistant' && myRecord) {
+      if (role === 'assistant' && myRecord) {
         data = data.filter(s => s.assistant_id === myRecord.id);
       }
       setSessions(data);
@@ -86,13 +84,13 @@ export default function ClinicPage() {
     }
   }
 
-  /* 세션 추가 */
   async function handleAddSession() {
-    const teacherId = (role === 'teacher' && myRecord) ? myRecord.id : null;
+    const teacherId   = (role === 'teacher'   && myRecord) ? myRecord.id : null;
+    const assistantId = (role === 'assistant' && myRecord) ? myRecord.id : null;
     try {
       const newSession = await createClinicSession({
         teacher_id:   teacherId,
-        assistant_id: null,
+        assistant_id: assistantId,
         session_date: date,
       });
       setSessions(prev => [...prev, newSession]);
@@ -101,7 +99,6 @@ export default function ClinicPage() {
     }
   }
 
-  /* 세션 헤더 업데이트 */
   async function handleUpdateSession(sessionId, patch) {
     try {
       const updated = await updateClinicSession(sessionId, patch);
@@ -113,7 +110,6 @@ export default function ClinicPage() {
     }
   }
 
-  /* 세션 삭제 */
   async function handleDeleteSession(sessionId) {
     if (!confirm('이 클리닉 세션을 삭제하시겠습니까?')) return;
     try {
@@ -125,7 +121,6 @@ export default function ClinicPage() {
     }
   }
 
-  /* 행 추가 */
   async function handleAddItem(sessionId) {
     const session  = sessions.find(s => s.id === sessionId);
     const maxOrder = session?.clinic_items?.length ?? 0;
@@ -141,7 +136,7 @@ export default function ClinicPage() {
       });
       setSessions(prev => prev.map(s =>
         s.id === sessionId
-          ? { ...s, clinic_items: [...(s.clinic_items ?? []), item] }
+          ? { ...s, clinic_items: [...(s.clinic_items ?? []), { ...item, clinic_replies: [] }] }
           : s
       ));
     } catch (e) {
@@ -149,7 +144,6 @@ export default function ClinicPage() {
     }
   }
 
-  /* 행 업데이트 (낙관적 업데이트) */
   async function handleUpdateItem(sessionId, itemId, patch) {
     setSessions(prev => prev.map(s =>
       s.id === sessionId
@@ -164,13 +158,73 @@ export default function ClinicPage() {
     }
   }
 
-  /* 행 삭제 */
   async function handleDeleteItem(sessionId, itemId) {
     try {
       await deleteClinicItem(itemId);
       setSessions(prev => prev.map(s =>
         s.id === sessionId
           ? { ...s, clinic_items: s.clinic_items.filter(i => i.id !== itemId) }
+          : s
+      ));
+    } catch (e) {
+      showToast('삭제 실패', 'error');
+    }
+  }
+
+  /* ── 보고(reply) 핸들러 ── */
+  async function handleAddReply(sessionId, itemId, payload) {
+    try {
+      const reply = await createClinicReply(payload);
+      setSessions(prev => prev.map(s =>
+        s.id === sessionId
+          ? {
+              ...s,
+              clinic_items: s.clinic_items.map(i =>
+                i.id === itemId
+                  ? { ...i, clinic_replies: [...(i.clinic_replies ?? []), reply] }
+                  : i
+              ),
+            }
+          : s
+      ));
+    } catch (e) {
+      showToast('보고 추가 실패: ' + e.message, 'error');
+    }
+  }
+
+  async function handleUpdateReply(sessionId, itemId, replyId, content) {
+    try {
+      const updated = await updateClinicReply(replyId, content);
+      setSessions(prev => prev.map(s =>
+        s.id === sessionId
+          ? {
+              ...s,
+              clinic_items: s.clinic_items.map(i =>
+                i.id === itemId
+                  ? { ...i, clinic_replies: i.clinic_replies.map(r => r.id === replyId ? updated : r) }
+                  : i
+              ),
+            }
+          : s
+      ));
+    } catch (e) {
+      showToast('수정 실패', 'error');
+    }
+  }
+
+  async function handleDeleteReply(sessionId, itemId, replyId) {
+    try {
+      await deleteClinicReply(replyId);
+      setSessions(prev => prev.map(s =>
+        s.id === sessionId
+          ? {
+              ...s,
+              clinic_items: s.clinic_items.map(i =>
+                i.id === itemId
+                  ? { ...i, clinic_replies: i.clinic_replies.filter(r => r.id !== replyId) }
+                  : i
+              ),
+            }
           : s
       ));
     } catch (e) {
@@ -197,13 +251,18 @@ export default function ClinicPage() {
               <i className="fas fa-lock" /> 지난 날짜 — {isAdmin ? '' : '원장만 수정 가능'}
             </span>
           )}
+          {canEdit && date > today && (
+            <span style={{ fontSize: 12, color: '#4361ee', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <i className="fas fa-calendar-alt" /> 미리 입력 중
+            </span>
+          )}
           <input
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
             style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#1e293b', background: '#fff' }}
           />
-          {!isAssistant && canEdit && (
+          {canEdit && (
             <button
               onClick={handleAddSession}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
@@ -237,6 +296,14 @@ create table if not exists clinic_items (
   result text default '',
   sort_order int default 0,
   created_at timestamptz default now()
+);
+create table if not exists clinic_replies (
+  id uuid default gen_random_uuid() primary key,
+  item_id uuid references clinic_items(id) on delete cascade not null,
+  author_id uuid references teachers(id) on delete set null,
+  author_name text default '',
+  content text default '',
+  created_at timestamptz default now()
 );`}
           </code>
         </div>
@@ -251,7 +318,7 @@ create table if not exists clinic_items (
       ) : sessions.length === 0 && !dbError ? (
         <div style={{ textAlign: 'center', padding: 60, color: '#94a3b8' }}>
           <i className="fas fa-stethoscope" style={{ fontSize: 36, marginBottom: 12, display: 'block' }} />
-          {isAssistant ? '배정된 클리닉 세션이 없습니다.' : '세션 추가 버튼을 눌러 클리닉을 시작하세요.'}
+          세션 추가 버튼을 눌러 클리닉을 시작하세요.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -261,15 +328,20 @@ create table if not exists clinic_items (
               session={session}
               color={COLOR_PALETTE[idx % COLOR_PALETTE.length]}
               isAssistant={isAssistant}
+              isAdmin={isAdmin}
               canEdit={canEdit}
               teacherList={teacherList}
               assistantList={assistantList}
               students={students}
+              myRecord={myRecord}
               onUpdateSession={handleUpdateSession}
               onDeleteSession={handleDeleteSession}
               onAddItem={handleAddItem}
               onUpdateItem={handleUpdateItem}
               onDeleteItem={handleDeleteItem}
+              onAddReply={(itemId, payload) => handleAddReply(session.id, itemId, payload)}
+              onUpdateReply={(itemId, replyId, content) => handleUpdateReply(session.id, itemId, replyId, content)}
+              onDeleteReply={(itemId, replyId) => handleDeleteReply(session.id, itemId, replyId)}
             />
           ))}
         </div>
@@ -282,11 +354,11 @@ create table if not exists clinic_items (
    세션 카드
 ───────────────────────────────────────────── */
 function SessionCard({
-  session, color, isAssistant, canEdit,
-  teacherList, assistantList, students,
+  session, color, isAssistant, isAdmin, canEdit,
+  teacherList, assistantList, students, myRecord,
   onUpdateSession, onDeleteSession, onAddItem, onUpdateItem, onDeleteItem,
+  onAddReply, onUpdateReply, onDeleteReply,
 }) {
-  /* 조교 뷰: [조교(색)] [담당강사]  /  강사 뷰: [담당강사(색)] [조교] */
   const primaryId   = isAssistant ? session.assistant_id  : session.teacher_id;
   const secondaryId = isAssistant ? session.teacher_id    : session.assistant_id;
   const primaryList   = isAssistant ? assistantList : teacherList;
@@ -309,8 +381,7 @@ function SessionCard({
     <div style={{ background: color.rowBg, border: `1.5px solid ${color.border}`, borderRadius: 14, overflow: 'hidden' }}>
       {/* 세션 헤더 */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        {/* 주체 (색상 버튼) */}
-        {!isAssistant && canEdit ? (
+        {canEdit ? (
           <select
             value={primaryId ?? ''}
             onChange={e => setPrimary(e.target.value)}
@@ -325,8 +396,7 @@ function SessionCard({
           </div>
         )}
 
-        {/* 보조 (흰 버튼) */}
-        {!isAssistant && canEdit ? (
+        {canEdit ? (
           <select
             value={secondaryId ?? ''}
             onChange={e => setSecondary(e.target.value)}
@@ -337,11 +407,11 @@ function SessionCard({
           </select>
         ) : (
           <div style={{ background: '#fff', color: '#1e293b', padding: '6px 14px', borderRadius: 7, fontWeight: 600, fontSize: 14, border: '1px solid #e2e8f0' }}>
-            {secondaryName ?? (secondaryLabel)}
+            {secondaryName ?? secondaryLabel}
           </div>
         )}
 
-        {!isAssistant && canEdit && (
+        {canEdit && (
           <button
             onClick={() => onDeleteSession(session.id)}
             style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 16, padding: 4 }}
@@ -352,7 +422,6 @@ function SessionCard({
         )}
       </div>
 
-      {/* 구분선 */}
       <div style={{ height: 2, background: color.btnBg }} />
 
       {/* 아이템 목록 */}
@@ -366,7 +435,7 @@ function SessionCard({
         {/* 컬럼 헤더 */}
         {(session.clinic_items ?? []).length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 6, padding: '0 2px' }}>
-            {['학생', '과목', '클리닉', '내용', ''].map((h, i) => (
+            {['학생', '과목', '클리닉', isAssistant ? '지시내용' : '내용', ''].map((h, i) => (
               <div key={i} style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textAlign: 'left' }}>{h}</div>
             ))}
           </div>
@@ -378,13 +447,19 @@ function SessionCard({
             item={item}
             color={color}
             canEdit={canEdit}
+            isAssistant={isAssistant}
+            isAdmin={isAdmin}
             students={students}
+            myRecord={myRecord}
             onUpdate={patch => onUpdateItem(session.id, item.id, patch)}
             onDelete={() => onDeleteItem(session.id, item.id)}
+            onAddReply={payload => onAddReply(item.id, payload)}
+            onUpdateReply={(replyId, content) => onUpdateReply(item.id, replyId, content)}
+            onDeleteReply={replyId => onDeleteReply(item.id, replyId)}
           />
         ))}
 
-        {/* 행추가 버튼 — 편집 가능할 때만 */}
+        {/* 행추가 */}
         {canEdit && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
             <button
@@ -403,22 +478,24 @@ function SessionCard({
 /* ─────────────────────────────────────────────
    아이템 행
 ───────────────────────────────────────────── */
-function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
-  // 내용이 있으면 저장된 상태로 시작, 비어 있으면 편집 모드로 시작
-  const hasContent = !!(item.student_id || item.subject || item.clinic_type || item.instructions || item.result);
+function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecord, onUpdate, onDelete, onAddReply, onUpdateReply, onDeleteReply }) {
+  const replies = item.clinic_replies ?? [];
+  const canAddReply = (isAssistant || isAdmin) && canEdit;
+
+  const hasContent = !!(item.student_id || item.subject || item.clinic_type || item.instructions);
   const [editing, setEditing] = useState(!hasContent);
   const [saving,  setSaving]  = useState(false);
+  const [showReplyInput, setShowReplyInput] = useState(false);
 
   const [studentId,  setStudentId]  = useState(item.student_id ?? '');
   const [subject,    setSubject]    = useState(item.subject ?? '');
   const [clinicType, setClinicType] = useState(item.clinic_type ?? '');
-  const [memo,       setMemo]       = useState(item.instructions ?? item.result ?? '');
+  const [memo,       setMemo]       = useState(item.instructions ?? '');
 
-  // 외부에서 item이 바뀔 때 로컬 상태 동기화 (편집 중이 아닐 때만)
-  useEffect(() => { if (!editing) { setStudentId(item.student_id ?? ''); }  }, [item.student_id]);
-  useEffect(() => { if (!editing) { setSubject(item.subject ?? ''); }        }, [item.subject]);
-  useEffect(() => { if (!editing) { setClinicType(item.clinic_type ?? ''); } }, [item.clinic_type]);
-  useEffect(() => { if (!editing) { setMemo(item.instructions ?? item.result ?? ''); } }, [item.instructions, item.result]);
+  useEffect(() => { if (!editing) setStudentId(item.student_id ?? '');  }, [item.student_id]);
+  useEffect(() => { if (!editing) setSubject(item.subject ?? '');        }, [item.subject]);
+  useEffect(() => { if (!editing) setClinicType(item.clinic_type ?? ''); }, [item.clinic_type]);
+  useEffect(() => { if (!editing) setMemo(item.instructions ?? '');      }, [item.instructions]);
 
   const studentName = students.find(s => s.id === studentId)?.name ?? item.students?.name;
 
@@ -426,11 +503,10 @@ function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
     setSaving(true);
     try {
       await onUpdate({
-        student_id:  studentId || null,
-        subject:     subject,
-        clinic_type: clinicType,
+        student_id:   studentId || null,
+        subject,
+        clinic_type:  clinicType,
         instructions: memo,
-        result:       memo,   // result 필드도 동기화
       });
       setEditing(false);
     } finally {
@@ -461,7 +537,6 @@ function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
     boxSizing: 'border-box',
   };
 
-  // 저장된 상태: 초록 테두리 + 볼드
   const savedCell = {
     border: '1.5px solid #22c55e',
     borderRadius: 6,
@@ -477,7 +552,6 @@ function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
     alignItems: 'center',
   };
 
-  // 과거 날짜 읽기 전용 (회색)
   const lockedCell = {
     border: '1px solid #e2e8f0',
     borderRadius: 6,
@@ -492,15 +566,58 @@ function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
     alignItems: 'center',
   };
 
-  /* ── 과거 날짜: 완전 읽기 전용 ── */
+  const replySection = (
+    (replies.length > 0 || showReplyInput) && (
+      <div style={{
+        marginLeft: 8, marginTop: 4, marginBottom: 4,
+        paddingLeft: 12, borderLeft: '3px solid #c7d2fe',
+      }}>
+        {replies.map(reply => (
+          <ReplyRow
+            key={reply.id}
+            reply={reply}
+            canEdit={canEdit && (isAdmin || reply.author_id === myRecord?.id)}
+            onUpdate={content => onUpdateReply(reply.id, content)}
+            onDelete={() => onDeleteReply(reply.id)}
+          />
+        ))}
+        {showReplyInput && (
+          <ReplyInput
+            myRecord={myRecord}
+            onSave={content => {
+              onAddReply({
+                item_id:     item.id,
+                author_id:   myRecord?.id ?? null,
+                author_name: myRecord?.name ?? '조교',
+                content,
+              });
+              setShowReplyInput(false);
+            }}
+            onCancel={() => setShowReplyInput(false)}
+          />
+        )}
+      </div>
+    )
+  );
+
+  /* ── 과거 날짜: 읽기 전용 ── */
   if (!canEdit) {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-        <div style={lockedCell}>{studentName || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
-        <div style={lockedCell}>{item.subject || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
-        <div style={lockedCell}>{item.clinic_type || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
-        <div style={lockedCell}>{item.instructions || item.result || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
-        <div style={{ width: 68 }} />
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, alignItems: 'center' }}>
+          <div style={lockedCell}>{studentName || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+          <div style={lockedCell}>{item.subject || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+          <div style={lockedCell}>{item.clinic_type || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+          <div style={lockedCell}>{item.instructions || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+          <div style={{ width: 68 }} />
+        </div>
+        {replies.length > 0 && (
+          <div style={{ marginLeft: 8, marginTop: 4, paddingLeft: 12, borderLeft: '3px solid #c7d2fe' }}>
+            {replies.map(reply => (
+              <ReplyRow key={reply.id} reply={reply} canEdit={false} onUpdate={() => {}} onDelete={() => {}} />
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -508,76 +625,182 @@ function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
   /* ── 저장된 상태 (보기 모드) ── */
   if (!editing) {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-        <div style={savedCell}>{studentName || <span style={{ color: '#86efac' }}>—</span>}</div>
-        <div style={savedCell}>{item.subject || <span style={{ color: '#86efac' }}>—</span>}</div>
-        <div style={savedCell}>{item.clinic_type || <span style={{ color: '#86efac' }}>—</span>}</div>
-        <div style={savedCell}>{item.instructions || item.result || <span style={{ color: '#86efac' }}>—</span>}</div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button
-            onClick={() => setEditing(true)}
-            title="수정"
-            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, fontWeight:600, color:'#475569', cursor:'pointer' }}
-          >
-            <i className="fas fa-pen" style={{ fontSize:10 }} /> 수정
-          </button>
-          <button
-            onClick={onDelete}
-            title="삭제"
-            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', background:'#fff0f0', border:'1px solid #fecaca', borderRadius:6, fontSize:12, fontWeight:600, color:'#ef4444', cursor:'pointer' }}
-            onMouseEnter={e => e.currentTarget.style.background='#fee2e2'}
-            onMouseLeave={e => e.currentTarget.style.background='#fff0f0'}
-          >
-            <i className="fas fa-trash-alt" style={{ fontSize:10 }} /> 삭제
-          </button>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, alignItems: 'center' }}>
+          <div style={savedCell}>{studentName || <span style={{ color: '#86efac' }}>—</span>}</div>
+          <div style={savedCell}>{item.subject || <span style={{ color: '#86efac' }}>—</span>}</div>
+          <div style={savedCell}>{item.clinic_type || <span style={{ color: '#86efac' }}>—</span>}</div>
+          <div style={savedCell}>{item.instructions || <span style={{ color: '#86efac' }}>—</span>}</div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+            <>
+              <button
+                onClick={() => setEditing(true)}
+                style={btnStyle('#f1f5f9', '#475569', '#e2e8f0')}
+              >
+                <i className="fas fa-pen" style={{ fontSize: 10 }} /> 수정
+              </button>
+              <button
+                onClick={onDelete}
+                style={btnStyle('#fff0f0', '#ef4444', '#fecaca')}
+                onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'}
+                onMouseLeave={e => e.currentTarget.style.background = '#fff0f0'}
+              >
+                <i className="fas fa-trash-alt" style={{ fontSize: 10 }} /> 삭제
+              </button>
+            </>
+            {canAddReply && !showReplyInput && (
+              <button
+                onClick={() => setShowReplyInput(true)}
+                style={btnStyle('#eff6ff', '#4361ee', '#bfdbfe')}
+              >
+                <i className="fas fa-comment-dots" style={{ fontSize: 10 }} /> 보고
+              </button>
+            )}
+          </div>
         </div>
+        {replySection}
       </div>
     );
   }
 
-  /* ── 편집 모드 ── */
+  /* ── 편집 모드 (강사/원장만 진입 가능) ── */
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-      <select value={studentId} onChange={e => setStudentId(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
-        <option value="">학생 선택</option>
-        {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-      </select>
-      <select value={subject} onChange={e => setSubject(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
-        <option value="">과목</option>
-        {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-      <select value={clinicType} onChange={e => setClinicType(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
-        <option value="">클리닉</option>
-        {CLINIC_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
-      </select>
-      <input
-        type="text"
-        value={memo}
-        placeholder="지시내용 또는 결과 입력"
-        onChange={e => setMemo(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
-        style={editCell}
-      />
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          title="저장"
-          style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 10px', background:'#4361ee', border:'none', borderRadius:6, fontSize:12, fontWeight:700, color:'#fff', cursor:'pointer', opacity: saving ? 0.7 : 1 }}
-        >
-          <i className={saving ? 'fas fa-spinner fa-spin' : 'fas fa-check'} style={{ fontSize:10 }} />
-          {saving ? '' : ' 저장'}
-        </button>
-        <button
-          onClick={onDelete}
-          title="삭제"
-          style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', background:'#fff0f0', border:'1px solid #fecaca', borderRadius:6, fontSize:12, fontWeight:600, color:'#ef4444', cursor:'pointer' }}
-          onMouseEnter={e => e.currentTarget.style.background='#fee2e2'}
-          onMouseLeave={e => e.currentTarget.style.background='#fff0f0'}
-        >
-          <i className="fas fa-trash-alt" style={{ fontSize:10 }} /> 삭제
-        </button>
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, alignItems: 'center' }}>
+        <select value={studentId} onChange={e => setStudentId(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
+          <option value="">학생 선택</option>
+          {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={subject} onChange={e => setSubject(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
+          <option value="">과목</option>
+          {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={clinicType} onChange={e => setClinicType(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
+          <option value="">클리닉</option>
+          {CLINIC_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input
+          type="text"
+          value={memo}
+          placeholder="지시내용 입력"
+          onChange={e => setMemo(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+          style={editCell}
+        />
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '4px 10px', background: '#4361ee', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', opacity: saving ? 0.7 : 1 }}
+          >
+            <i className={saving ? 'fas fa-spinner fa-spin' : 'fas fa-check'} style={{ fontSize: 10 }} />
+            {saving ? '' : ' 저장'}
+          </button>
+          <button
+            onClick={onDelete}
+            style={btnStyle('#fff0f0', '#ef4444', '#fecaca')}
+            onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'}
+            onMouseLeave={e => e.currentTarget.style.background = '#fff0f0'}
+          >
+            <i className="fas fa-trash-alt" style={{ fontSize: 10 }} /> 삭제
+          </button>
+        </div>
       </div>
+      {replySection}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   보고 행 (댓글 표시)
+───────────────────────────────────────────── */
+function ReplyRow({ reply, canEdit, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState(reply.content);
+
+  const dateStr = reply.created_at
+    ? new Date(reply.created_at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })
+    : '';
+
+  if (editing) {
+    return (
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '5px 0' }}>
+        <i className="fas fa-comment-dots" style={{ color: '#4361ee', fontSize: 12 }} />
+        <input
+          autoFocus
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && content.trim()) { onUpdate(content.trim()); setEditing(false); }
+            if (e.key === 'Escape') { setContent(reply.content); setEditing(false); }
+          }}
+          style={{ flex: 1, padding: '4px 8px', border: '1px solid #4361ee', borderRadius: 6, fontSize: 13, outline: 'none' }}
+        />
+        <button
+          onClick={() => { if (content.trim()) { onUpdate(content.trim()); setEditing(false); } }}
+          style={{ padding: '3px 10px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        >저장</button>
+        <button
+          onClick={() => { setContent(reply.content); setEditing(false); }}
+          style={{ padding: '3px 8px', background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+        >취소</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', fontSize: 13 }}>
+      <i className="fas fa-comment-dots" style={{ color: '#4361ee', fontSize: 12, flexShrink: 0 }} />
+      <span style={{ fontWeight: 700, color: '#4361ee', whiteSpace: 'nowrap' }}>{reply.author_name}</span>
+      <span style={{ color: '#1e293b', flex: 1 }}>{reply.content}</span>
+      <span style={{ color: '#94a3b8', fontSize: 11, whiteSpace: 'nowrap' }}>{dateStr}</span>
+      {canEdit && (
+        <>
+          <button
+            onClick={() => setEditing(true)}
+            style={{ padding: '2px 7px', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 5, fontSize: 11, cursor: 'pointer' }}
+          >수정</button>
+          <button
+            onClick={onDelete}
+            style={{ padding: '2px 7px', background: '#fff0f0', color: '#ef4444', border: '1px solid #fecaca', borderRadius: 5, fontSize: 11, cursor: 'pointer' }}
+          >삭제</button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   보고 입력창
+───────────────────────────────────────────── */
+function ReplyInput({ myRecord, onSave, onCancel }) {
+  const [content, setContent] = useState('');
+
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '5px 0' }}>
+      <i className="fas fa-comment-dots" style={{ color: '#4361ee', fontSize: 12, flexShrink: 0 }} />
+      <span style={{ fontSize: 13, color: '#4361ee', fontWeight: 700, whiteSpace: 'nowrap' }}>
+        {myRecord?.name ?? '조교'}:
+      </span>
+      <input
+        autoFocus
+        value={content}
+        onChange={e => setContent(e.target.value)}
+        placeholder="결과보고 입력 후 Enter"
+        onKeyDown={e => {
+          if (e.key === 'Enter' && content.trim()) onSave(content.trim());
+          if (e.key === 'Escape') onCancel();
+        }}
+        style={{ flex: 1, padding: '4px 8px', border: '1px solid #4361ee', borderRadius: 6, fontSize: 13, outline: 'none' }}
+      />
+      <button
+        onClick={() => { if (content.trim()) onSave(content.trim()); }}
+        style={{ padding: '3px 10px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+      >저장</button>
+      <button
+        onClick={onCancel}
+        style={{ padding: '3px 8px', background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+      >취소</button>
     </div>
   );
 }
@@ -585,39 +808,36 @@ function ItemRow({ item, color, canEdit, students, onUpdate, onDelete }) {
 /* ─────────────────────────────────────────────
    스타일 헬퍼
 ───────────────────────────────────────────── */
+function btnStyle(bg, color, borderColor) {
+  return {
+    display: 'flex', alignItems: 'center', gap: 3,
+    padding: '4px 8px',
+    background: bg, border: `1px solid ${borderColor}`,
+    borderRadius: 6, fontSize: 12, fontWeight: 600,
+    color, cursor: 'pointer',
+  };
+}
 function colorSelectStyle(bg, text) {
   return {
-    background: bg,
-    color: text,
-    border: 'none',
-    borderRadius: 7,
+    background: bg, color: text,
+    border: 'none', borderRadius: 7,
     padding: '6px 28px 6px 12px',
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: 'pointer',
-    appearance: 'none',
+    fontWeight: 700, fontSize: 14,
+    cursor: 'pointer', appearance: 'none',
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%23${encodeURIComponent(text.slice(1))}' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'right 8px center',
-    backgroundSize: '16px',
-    minWidth: 100,
+    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+    backgroundSize: '16px', minWidth: 100,
   };
 }
 function whiteSelectStyle() {
   return {
-    background: '#fff',
-    color: '#1e293b',
-    border: '1px solid #e2e8f0',
-    borderRadius: 7,
+    background: '#fff', color: '#1e293b',
+    border: '1px solid #e2e8f0', borderRadius: 7,
     padding: '6px 28px 6px 12px',
-    fontWeight: 600,
-    fontSize: 14,
-    cursor: 'pointer',
-    appearance: 'none',
+    fontWeight: 600, fontSize: 14,
+    cursor: 'pointer', appearance: 'none',
     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'right 8px center',
-    backgroundSize: '16px',
-    minWidth: 100,
+    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+    backgroundSize: '16px', minWidth: 100,
   };
 }
