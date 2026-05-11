@@ -42,15 +42,25 @@ export function useStudentList() {
           return;
         }
 
-        // 각 교사 레코드 기준으로 학생 조회 후 id 기준 중복 제거
-        const results = await Promise.all(
-          [...teacherMap.keys()].map(tid => getStudentsForTeacher(tid))
-        );
-        const merged = [...new Map(
-          results.flat().map(s => [s.id, s])
-        ).values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+        // 각 교사 레코드 기준으로 학생 조회 (오류 시 무시하고 폴백)
+        let merged = [];
+        try {
+          const results = await Promise.all(
+            [...teacherMap.keys()].map(tid => getStudentsForTeacher(tid))
+          );
+          merged = [...new Map(
+            results.flat().map(s => [s.id, s])
+          ).values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+        } catch (e) {
+          console.warn('[StudentList] getStudentsForTeacher 실패, 전체 폴백:', e);
+        }
 
-        setStudents(merged);
+        if (merged.length === 0) {
+          // RLS 문제이거나 담당 학생 미배정인 경우 전체 학생 목록으로 폴백
+          setStudents(await getStudents());
+        } else {
+          setStudents(merged);
+        }
       } else {
         setStudents(await getStudents());
       }
@@ -60,7 +70,7 @@ export function useStudentList() {
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, profile?.role]);
+  }, [profile]);
 
   useEffect(() => { fetch(); }, [fetch]);
 

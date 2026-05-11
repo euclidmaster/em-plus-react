@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 
-const GRADE_TABS = ['전체', '중1', '중2', '중3', '고1', '고2', '고3'];
+const GRADE_TABS = ['전체', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'];
 
 function normalizeGrade(grade) {
   if (!grade) return '기타';
   const g = grade.replace(/\s/g, '');
+  if ((g.includes('초') || g.includes('초등')) && g.includes('5')) return '초5';
+  if ((g.includes('초') || g.includes('초등')) && g.includes('6')) return '초6';
   if (g.includes('중') && g.includes('1')) return '중1';
   if (g.includes('중') && g.includes('2')) return '중2';
   if (g.includes('중') && g.includes('3')) return '중3';
@@ -77,6 +79,7 @@ export default function StudentSelect({ students = [], value, onChange }) {
   }
 
   const gradeColor = (g) => {
+    if (['초5','초6'].includes(g)) return { bg: '#dcfce7', color: '#166534', active: '#16a34a' };
     if (['중1','중2','중3'].includes(g)) return { bg: '#dbeafe', color: '#1d4ed8', active: '#1d4ed8' };
     if (['고1','고2','고3'].includes(g)) return { bg: '#fef9c3', color: '#92400e', active: '#d97706' };
     return { bg: '#f1f5f9', color: '#475569', active: '#4361ee' };

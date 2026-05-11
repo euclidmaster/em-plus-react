@@ -1,3 +1,4 @@
+/* global process */
 /**
  * Vercel 서버리스 함수 — Claude AI 클리닉 요약
  *

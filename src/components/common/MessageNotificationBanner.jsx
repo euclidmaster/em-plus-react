@@ -1,7 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import { memo } from 'react';
 
-export default function MessageNotificationBanner({ unreadMessages, onDismiss, onRead }) {
+const MessageNotificationBanner = memo(function MessageNotificationBanner({ unreadMessages, onDismiss, onRead }) {
   const navigate = useNavigate();
   const { profile } = useAuth();
 
@@ -141,4 +142,6 @@ export default function MessageNotificationBanner({ unreadMessages, onDismiss, o
       </div>
     </div>
   );
-}
+});
+
+export default MessageNotificationBanner;

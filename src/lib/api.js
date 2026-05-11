@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js';
+import { todayLocal, toLocalDateString } from './dateUtil.js';
 
 // ==================== 학생 ====================
 export async function getStudents() {
@@ -300,8 +301,8 @@ export async function getStudentsForTeacher(teacherRecordId) {
 
   const { data, error } = await query.order('name');
   if (error) {
-    console.error('[getStudentsForTeacher] students 조회 오류:', error);
-    throw error;
+    console.warn('[getStudentsForTeacher] students 조회 오류 (폴백 처리됨):', error);
+    return [];
   }
   return data ?? [];
 }
@@ -553,7 +554,7 @@ export async function getRecentActivity() {
   return data;
 }
 export async function getTodaySchedule() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const { data, error } = await supabase.from('attendances').select('*, students(name)').eq('att_date', today).order('start_time');
   if (error) throw error;
   return data;
@@ -644,7 +645,7 @@ export async function getRoutineHistory(studentId) {
     .from('routine_logs')
     .select('*')
     .eq('student_id', studentId)
-    .gte('log_date', since.toISOString().slice(0, 10))
+    .gte('log_date', toLocalDateString(since))
     .order('log_date', { ascending: false });
   if (error) throw error;
   return data ?? [];
@@ -666,8 +667,8 @@ export async function getRoutineMonthlyData(studentId, yearMonth) {
 }
 
 export async function getDashboardStats() {
-  const today = new Date().toISOString().slice(0, 10);
-  const monday = getMondayOfWeek(new Date()).toISOString().slice(0, 10);
+  const today = todayLocal();
+  const monday = toLocalDateString(getMondayOfWeek(new Date()));
 
   const [
     { count: totalStudents },
@@ -867,6 +868,16 @@ export async function createClinicItem(payload) {
   if (error) throw error;
   return data;
 }
+export async function createClinicItems(rows) {
+  // 여러 행 일괄 삽입 (반 템플릿 적용 시 사용)
+  if (!rows.length) return [];
+  const { data, error } = await supabase
+    .from('clinic_items')
+    .insert(rows)
+    .select('*, students(id, name)');
+  if (error) throw error;
+  return data ?? [];
+}
 export async function updateClinicItem(id, payload) {
   const { data, error } = await supabase
     .from('clinic_items')
@@ -879,6 +890,105 @@ export async function updateClinicItem(id, payload) {
 }
 export async function deleteClinicItem(id) {
   const { error } = await supabase.from('clinic_items').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// ==================== 클리닉 반 템플릿 ====================
+// 필요한 Supabase SQL (처음 1회 실행):
+// alter table clinic_sessions add column if not exists class_name text;
+//
+// create table if not exists clinic_class_templates (
+//   id uuid default gen_random_uuid() primary key,
+//   class_name text not null,
+//   student_id uuid references students(id) on delete cascade not null,
+//   subject text default '',
+//   clinic_type text default '',
+//   instructions text default '',
+//   sort_order int default 0,
+//   updated_at timestamptz default now()
+// );
+// create index if not exists idx_clinic_class_templates_class_name
+//   on clinic_class_templates (class_name);
+//
+// RLS: 동일하게 auth.role() = 'authenticated' SELECT / INSERT / UPDATE / DELETE 허용
+//
+// (권장) 트랜잭션 보호용 RPC 함수 — 추가하면 saveClinicClassTemplate가 자동 사용:
+//   create or replace function save_clinic_class_template(
+//     p_class_name text,
+//     p_items jsonb
+//   ) returns void
+//   language plpgsql security invoker
+//   as $$
+//   begin
+//     delete from clinic_class_templates where class_name = p_class_name;
+//     if jsonb_array_length(p_items) > 0 then
+//       insert into clinic_class_templates
+//         (class_name, student_id, subject, clinic_type, instructions, sort_order)
+//       select
+//         p_class_name,
+//         (item->>'student_id')::uuid,
+//         coalesce(item->>'subject', ''),
+//         coalesce(item->>'clinic_type', ''),
+//         coalesce(item->>'instructions', ''),
+//         (idx - 1)::int
+//       from jsonb_array_elements(p_items) with ordinality as t(item, idx);
+//     end if;
+//   end;
+//   $$;
+//   grant execute on function save_clinic_class_template(text, jsonb) to authenticated;
+export async function getClassNames() {
+  // public_class_names view 사용 (anon 권한 허용 — 회원가입 페이지에서도 호출 가능)
+  // view 정의:
+  //   create or replace view public_class_names as
+  //     select distinct class_name from students
+  //     where status = '재원중' and class_name is not null;
+  //   grant select on public_class_names to anon, authenticated;
+  const { data, error } = await supabase
+    .from('public_class_names')
+    .select('class_name');
+  if (error) throw error;
+  const set = new Set((data ?? []).map(r => r.class_name).filter(Boolean));
+  return [...set].sort((a, b) => a.localeCompare(b, 'ko'));
+}
+export async function getClinicClassTemplate(className) {
+  const { data, error } = await supabase
+    .from('clinic_class_templates')
+    .select('*, students(id, name)')
+    .eq('class_name', className)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+export async function saveClinicClassTemplate(className, items) {
+  const payload = items.map(it => ({
+    student_id:   it.student_id,
+    subject:      it.subject       ?? '',
+    clinic_type:  it.clinic_type   ?? '',
+    instructions: it.instructions  ?? '',
+  }));
+
+  // 1차 시도: RPC (트랜잭션 보호 — delete+insert 원자적)
+  const { error: rpcErr } = await supabase.rpc('save_clinic_class_template', {
+    p_class_name: className,
+    p_items: payload,
+  });
+  if (!rpcErr) return;
+
+  // RPC가 없는 환경(함수 미설치) — undefined function 에러면 폴백, 그 외 권한/제약 오류는 throw
+  const code = rpcErr.code ?? '';
+  const msg  = rpcErr.message ?? '';
+  const isMissing = code === '42883' || /function .* does not exist/i.test(msg) || /Could not find the function/i.test(msg);
+  if (!isMissing) throw rpcErr;
+
+  // 폴백: delete + insert (트랜잭션 보호 X — 가급적 RPC 사용 권장)
+  const { error: delErr } = await supabase
+    .from('clinic_class_templates')
+    .delete()
+    .eq('class_name', className);
+  if (delErr) throw delErr;
+  if (!items.length) return;
+  const rows = payload.map((p, i) => ({ class_name: className, ...p, sort_order: i }));
+  const { error } = await supabase.from('clinic_class_templates').insert(rows);
   if (error) throw error;
 }
 

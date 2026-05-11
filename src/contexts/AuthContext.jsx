@@ -78,20 +78,22 @@ export function AuthProvider({ children }) {
       setTeacherPermissions(null);
     }
 
-    // 학생 역할이고, students.profile_id 미연결이면 자동 연결
+    // 학생 역할이고, students.profile_id 미연결이면 자동 연결 (결과 불필요 — fire-and-forget)
     if (prof.role === 'student' && meta.studentId) {
-      const { data: linked } = await supabase
+      supabase
         .from('students')
         .select('id, profile_id')
         .eq('id', meta.studentId)
-        .single();
-
-      if (linked && !linked.profile_id) {
-        await supabase
-          .from('students')
-          .update({ profile_id: u.id })
-          .eq('id', meta.studentId);
-      }
+        .single()
+        .then(({ data: linked }) => {
+          if (linked && !linked.profile_id) {
+            return supabase
+              .from('students')
+              .update({ profile_id: u.id })
+              .eq('id', meta.studentId);
+          }
+        })
+        .catch(() => {});
     }
   }
 
@@ -125,6 +127,7 @@ export function AuthProvider({ children }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   return useContext(AuthContext);
 }

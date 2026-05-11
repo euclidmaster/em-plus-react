@@ -12,7 +12,7 @@ export function useMessageNotification() {
     if (!profile?.id) return;
     localStorage.setItem(storageKey(profile.id), new Date().toISOString());
     setUnreadMessages([]);
-  }, [profile?.id]);
+  }, [profile]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -36,9 +36,28 @@ export function useMessageNotification() {
       }
     }
 
-    fetchUnread();
-    const interval = setInterval(fetchUnread, 10000);
-    return () => clearInterval(interval);
+    let interval;
+
+    function startPolling() {
+      fetchUnread();
+      interval = setInterval(fetchUnread, 10000);
+    }
+
+    function stopPolling() {
+      clearInterval(interval);
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') startPolling();
+      else stopPolling();
+    }
+
+    startPolling();
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [profile?.id]);
 
   return { unreadMessages, unreadCount: unreadMessages.length, markAllRead };

@@ -55,6 +55,7 @@ function AppLayout() {
   // 새 메시지 도착 시 배너 표시
   useEffect(() => {
     if (unreadCount > prevCountRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBannerVisible(true);
     }
     prevCountRef.current = unreadCount;
@@ -65,6 +66,7 @@ function AppLayout() {
     const msgPath = role === 'student' ? '/my/chat' : '/messages';
     if (location.pathname === msgPath) {
       markAllRead();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBannerVisible(false);
     }
   }, [location.pathname, role, markAllRead]);
