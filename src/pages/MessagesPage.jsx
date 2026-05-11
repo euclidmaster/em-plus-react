@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { getAllMessages } from '../lib/api.js';
+import { useMessageActions } from '../hooks/useMessageActions.js';
 
 /* 두 ID를 정렬해 대화 쌍 식별 키 생성 */
 function pairKey(a, b) { return [a, b].sort().join('::'); }
@@ -12,12 +14,15 @@ export default function MessagesPage() {
   const [allMessages, setAllMessages] = useState([]);
   const [loading, setLoading]         = useState(true);
   const [selectedKey, setSelectedKey] = useState(null);
+  const [editingId, setEditingId]     = useState(null);
+  const [editText, setEditText]       = useState('');
+  const { canModify, handleEdit, handleDelete } = useMessageActions(setAllMessages);
 
   /* 필터 */
   const [filterFrom, setFilterFrom] = useState(''); // 발신인 profile_id
   const [filterTo,   setFilterTo]   = useState(''); // 수신인 profile_id
 
-  const bottomRef = useRef(null);
+  const threadParentRef = useRef(null);
 
   useEffect(() => { load(); }, []);
 
@@ -88,12 +93,38 @@ export default function MessagesPage() {
     selectedKey ? allMessages.filter(m => pairKey(m.from_id, m.to_id) === selectedKey) : [],
   [allMessages, selectedKey]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior:'smooth' }); }, [thread.length]);
+  // 날짜 구분선과 메시지를 하나의 flat 배열로 통합
+  const threadItems = useMemo(() => {
+    const items = [];
+    let lastDate = null;
+    thread.forEach(m => {
+      const d = new Date(m.created_at).toDateString();
+      if (d !== lastDate) {
+        lastDate = d;
+        items.push({ type: 'date', key: `date-${d}`, date: m.created_at });
+      }
+      items.push({ type: 'message', key: String(m.id), msg: m });
+    });
+    return items;
+  }, [thread]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: threadItems.length,
+    getScrollElement: () => threadParentRef.current,
+    estimateSize: (i) => threadItems[i]?.type === 'date' ? 44 : 90,
+    overscan: 5,
+  });
+
+  useEffect(() => {
+    if (threadItems.length > 0) {
+      rowVirtualizer.scrollToIndex(threadItems.length - 1);
+    }
+  }, [thread.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 선택된 대화가 필터 결과에 없으면 초기화 */
   useEffect(() => {
     if (selectedKey && !conversations.find(c => c.key === selectedKey)) setSelectedKey(null);
-  }, [conversations]);
+  }, [conversations]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 필터 모드 라벨 */
   function filterLabel() {
@@ -108,26 +139,41 @@ export default function MessagesPage() {
 
   function resetFilter() { setFilterFrom(''); setFilterTo(''); setSelectedKey(null); }
 
-  /* 스레드 렌더링 */
-  function renderThread() {
-    let lastDate = null;
-    const items = [];
-    thread.forEach((m, i) => {
-      const d = new Date(m.created_at).toDateString();
-      if (d !== lastDate) {
-        lastDate = d;
-        items.push(
-          <div key={`d${i}`} style={{ textAlign:'center', margin:'16px 0 8px' }}>
-            <span style={{ fontSize:11, color:'#94a3b8', background:'#f8fafc', padding:'3px 12px', borderRadius:20, border:'1px solid #e2e8f0' }}>
-              {fmtDate(m.created_at)}
-            </span>
+  async function onEditSave(m) {
+    if (await handleEdit(m.id, editText)) setEditingId(null);
+  }
+
+  function renderDateSep(date) {
+    return (
+      <div style={{ textAlign:'center', margin:'8px 0' }}>
+        <span style={{ fontSize:11, color:'#94a3b8', background:'#f8fafc', padding:'3px 12px', borderRadius:20, border:'1px solid #e2e8f0' }}>
+          {fmtDate(date)}
+        </span>
+      </div>
+    );
+  }
+
+  function renderMsg(m) {
+    const isLeft = selectedConv && m.from_id === selectedConv.idA;
+    const modifiable = canModify(m);
+    const isEditing = editingId === m.id;
+    return (
+      <div style={{ display:'flex', flexDirection:'column', alignItems: isLeft ? 'flex-start' : 'flex-end' }}>
+        <div style={{ fontSize:11, color:'#94a3b8', marginBottom:3 }}>{m.from_name}</div>
+        {isEditing ? (
+          <div style={{ maxWidth:'68%', display:'flex', flexDirection:'column', gap:6 }}>
+            <textarea
+              value={editText}
+              onChange={e => setEditText(e.target.value)}
+              rows={3}
+              style={{ padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14, resize:'none', fontFamily:'inherit', lineHeight:1.5 }}
+            />
+            <div style={{ display:'flex', gap:6 }}>
+              <button onClick={() => onEditSave(m)} style={{ padding:'4px 12px', background:'#4361ee', color:'#fff', border:'none', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer' }}>저장</button>
+              <button onClick={() => setEditingId(null)} style={{ padding:'4px 12px', background:'#f1f5f9', color:'#475569', border:'none', borderRadius:6, fontSize:12, cursor:'pointer' }}>취소</button>
+            </div>
           </div>
-        );
-      }
-      const isLeft = selectedConv && m.from_id === selectedConv.idA;
-      items.push(
-        <div key={m.id} style={{ display:'flex', flexDirection:'column', alignItems: isLeft ? 'flex-start' : 'flex-end' }}>
-          <div style={{ fontSize:11, color:'#94a3b8', marginBottom:3 }}>{m.from_name}</div>
+        ) : (
           <div style={{
             maxWidth:'68%', padding:'10px 14px', fontSize:14, lineHeight:1.5, wordBreak:'break-word',
             borderRadius: isLeft ? '4px 14px 14px 14px' : '14px 4px 14px 14px',
@@ -135,11 +181,24 @@ export default function MessagesPage() {
             border: '1px solid ' + (isLeft ? '#e2e8f0' : '#c7d2fe'),
             color:'#1e293b',
           }}>{m.content}</div>
-          <div style={{ fontSize:11, color:'#cbd5e1', marginTop:3 }}>{fmtTime(m.created_at)}</div>
+        )}
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:3 }}>
+          <span style={{ fontSize:11, color:'#cbd5e1' }}>{fmtTime(m.created_at)}</span>
+          {modifiable && !isEditing && (
+            <>
+              <button onClick={() => { setEditingId(m.id); setEditText(m.content); }}
+                style={{ fontSize:10, color:'#94a3b8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', borderRadius:4 }}>
+                수정
+              </button>
+              <button onClick={() => handleDelete(m.id)}
+                style={{ fontSize:10, color:'#ef4444', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', borderRadius:4 }}>
+                삭제
+              </button>
+            </>
+          )}
         </div>
-      );
-    });
-    return items;
+      </div>
+    );
   }
 
   const selDrop = { flex:1, padding:'8px 10px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13, background:'#fff', cursor:'pointer' };
@@ -314,10 +373,27 @@ export default function MessagesPage() {
                   </div>
                 </div>
 
-                {/* 메시지 스레드 */}
-                <div style={{ flex:1, overflowY:'auto', padding:'16px 20px', display:'flex', flexDirection:'column', gap:8 }}>
-                  {renderThread()}
-                  <div ref={bottomRef} />
+                {/* 메시지 스레드 (가상화) */}
+                <div ref={threadParentRef} style={{ flex:1, overflowY:'auto' }}>
+                  <div style={{ height: rowVirtualizer.getTotalSize(), position:'relative' }}>
+                    {rowVirtualizer.getVirtualItems().map(vItem => {
+                      const item = threadItems[vItem.index];
+                      return (
+                        <div
+                          key={vItem.key}
+                          data-index={vItem.index}
+                          ref={rowVirtualizer.measureElement}
+                          style={{
+                            position:'absolute', top:0, left:0, width:'100%',
+                            transform:`translateY(${vItem.start}px)`,
+                            padding:'4px 20px', boxSizing:'border-box',
+                          }}
+                        >
+                          {item.type === 'date' ? renderDateSep(item.date) : renderMsg(item.msg)}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </>
             )

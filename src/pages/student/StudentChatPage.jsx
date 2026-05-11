@@ -3,6 +3,7 @@ import { useStudentSelf } from '../../hooks/useStudentSelf.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { getMessagesBetween, sendMessage } from '../../lib/api.js';
 import { useToast } from '../../components/common/Toast.jsx';
+import { useMessageActions } from '../../hooks/useMessageActions.js';
 
 export default function StudentChatPage() {
   const { student, loading } = useStudentSelf();
@@ -10,8 +11,15 @@ export default function StudentChatPage() {
   const [messages, setMessages] = useState([]);
   const [text, setText]         = useState('');
   const [selectedTeacherId, setSelectedTeacherId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText]   = useState('');
   const bottomRef               = useRef(null);
   const showToast = useToast();
+  const { canModify, handleEdit, handleDelete } = useMessageActions(setMessages);
+
+  async function onEditSave(m) {
+    if (await handleEdit(m.id, editText)) setEditingId(null);
+  }
 
   // 담당 선생님 전체 목록 (FK + 다대다 테이블 모두 포함, 중복 제거)
   const allTeachers = useMemo(() => {
@@ -30,27 +38,42 @@ export default function StudentChatPage() {
     return allTeachers.find(t => t.id === selectedTeacherId) ?? allTeachers[0];
   }, [allTeachers, selectedTeacherId]);
 
-  // 디버그 로그
-  console.log('[ChatPage] student:', student);
-  console.log('[ChatPage] allTeachers:', allTeachers);
-
-  useEffect(() => {
-    if (student && teacher?.profile_id && profile?.id) {
-      load();
-      const interval = setInterval(load, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [student, teacher, profile]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior:'smooth' });
-  }, [messages]);
-
   async function load() {
     if (!profile?.id || !teacher?.profile_id) return;
     try { setMessages(await getMessagesBetween(profile.id, teacher.profile_id)); }
     catch { /* 무시 */ }
   }
+
+  useEffect(() => {
+    if (!(student && teacher?.profile_id && profile?.id)) return;
+
+    let interval;
+
+    function startPolling() {
+      load();
+      interval = setInterval(load, 10000);
+    }
+
+    function stopPolling() {
+      clearInterval(interval);
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === 'visible') startPolling();
+      else stopPolling();
+    }
+
+    startPolling();
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [student, teacher, profile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior:'smooth' });
+  }, [messages]);
 
   async function send() {
     if (!text.trim()) return;
@@ -150,19 +173,50 @@ export default function StudentChatPage() {
                 )
                 : messages.map(m => {
                   const isMine = m.from_id === profile.id;
+                  const modifiable = canModify(m);
+                  const isEditing = editingId === m.id;
                   return (
                     <div key={m.id} style={{ display:'flex', flexDirection:'column', alignItems: isMine ? 'flex-end' : 'flex-start' }}>
                       <div style={{ fontSize:11, color:'#94a3b8', marginBottom:3 }}>
                         {isMine ? '나' : `${m.from_name} 선생님`}
                       </div>
-                      <div style={{
-                        maxWidth:'70%', padding:'10px 14px', borderRadius: isMine ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                        background: isMine ? '#4361ee' : '#f1f5f9',
-                        color: isMine ? '#fff' : '#1e293b',
-                        fontSize:14, lineHeight:1.5, wordBreak:'break-word',
-                      }}>{m.content}</div>
-                      <div style={{ fontSize:11, color:'#cbd5e1', marginTop:3 }}>
-                        {new Date(m.created_at).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                      {isEditing ? (
+                        <div style={{ maxWidth:'70%', display:'flex', flexDirection:'column', gap:6 }}>
+                          <textarea
+                            value={editText}
+                            onChange={e => setEditText(e.target.value)}
+                            rows={3}
+                            style={{ padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14, resize:'none', fontFamily:'inherit', lineHeight:1.5 }}
+                          />
+                          <div style={{ display:'flex', gap:6 }}>
+                            <button onClick={() => onEditSave(m)} style={{ padding:'4px 12px', background:'#4361ee', color:'#fff', border:'none', borderRadius:6, fontSize:12, fontWeight:600, cursor:'pointer' }}>저장</button>
+                            <button onClick={() => setEditingId(null)} style={{ padding:'4px 12px', background:'#f1f5f9', color:'#475569', border:'none', borderRadius:6, fontSize:12, cursor:'pointer' }}>취소</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{
+                          maxWidth:'70%', padding:'10px 14px', borderRadius: isMine ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                          background: isMine ? '#4361ee' : '#f1f5f9',
+                          color: isMine ? '#fff' : '#1e293b',
+                          fontSize:14, lineHeight:1.5, wordBreak:'break-word',
+                        }}>{m.content}</div>
+                      )}
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:3 }}>
+                        <span style={{ fontSize:11, color:'#cbd5e1' }}>
+                          {new Date(m.created_at).toLocaleString('ko-KR', { month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                        </span>
+                        {modifiable && !isEditing && (
+                          <>
+                            <button onClick={() => { setEditingId(m.id); setEditText(m.content); }}
+                              style={{ fontSize:10, color:'#94a3b8', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', borderRadius:4 }}>
+                              수정
+                            </button>
+                            <button onClick={() => handleDelete(m.id)}
+                              style={{ fontSize:10, color:'#ef4444', background:'none', border:'none', cursor:'pointer', padding:'2px 6px', borderRadius:4 }}>
+                              삭제
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
