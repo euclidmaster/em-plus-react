@@ -5,16 +5,10 @@ import {
   getHomeworks, getDailyRecords,
   getWeeklyPlans, getPerformances, getGradeStats, getStudentTeachers,
 } from '../../lib/api.js';
+import { todayLocal, toLocalDateString, getMonday } from '../../lib/dateUtil.js';
 
 const colorMap = { blue:'#4361ee', green:'#2dc653', orange:'#f4a261', purple:'#7209b7', red:'#e63946' };
 const COLORS   = ['blue','green','orange','purple','red'];
-
-function getMonday(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
-  return d.toISOString().slice(0, 10);
-}
 
 export default function StudentHomePage() {
   const { student, loading } = useStudentSelf();
@@ -54,7 +48,7 @@ export default function StudentHomePage() {
   );
 
   const today    = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayLocal();
 
   const pendingHw = homeworks.filter(h => !h.is_done);
   const hwDone    = homeworks.filter(h => h.is_done).length;
@@ -64,7 +58,7 @@ export default function StudentHomePage() {
   const weekStart = getMonday(new Date());
   const weekEnd   = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 6);
-  const weekLabel = `${weekStart} ~ ${weekEnd.toISOString().slice(0, 10)}`;
+  const weekLabel = `${weekStart} ~ ${toLocalDateString(weekEnd)}`;
 
   const subjects  = [...new Set(gradeData.map(g => g.subject))];
 

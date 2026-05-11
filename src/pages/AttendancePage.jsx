@@ -5,12 +5,13 @@ import Modal from '../components/common/Modal.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
+import { todayLocal } from '../lib/dateUtil.js';
 
-const EMPTY_FORM = {
-  att_date: new Date().toISOString().slice(0,10),
+const emptyForm = () => ({
+  att_date: todayLocal(),
   att_type:'정규', start_time:'', end_time:'',
   status:'출석', attitude:'보통', task_desc:'', report_content:'', reporter_id:'',
-};
+});
 
 export default function AttendancePage() {
   const { students } = useStudentList();
@@ -20,22 +21,15 @@ export default function AttendancePage() {
   const [comments, setComments]       = useState({});
   const [commentInputs, setCommentInputs] = useState({});
   const [showModal, setShowModal]     = useState(false);
-  const [form, setForm]               = useState(EMPTY_FORM);
+  const [form, setForm]               = useState(emptyForm());
   const [editTarget, setEditTarget]   = useState(null);
-  const [editForm, setEditForm]       = useState(EMPTY_FORM);
+  const [editForm, setEditForm]       = useState(emptyForm());
   const showToast = useToast();
   const { profile } = useAuth();
 
   useEffect(() => {
     getTeachers().then(setTeachers).catch(console.error);
   }, []);
-
-  useEffect(() => {
-    if (students.length && selectedId === null) {
-      setSelectedId(students[0].id);
-      loadAtt(students[0].id);
-    }
-  }, [students]);
 
   async function loadAtt(id) {
     try {
@@ -49,6 +43,14 @@ export default function AttendancePage() {
       setComments(cm);
     } catch { showToast('출석 로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    if (students.length && selectedId === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelectedId(students[0].id);
+      loadAtt(students[0].id);
+    }
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submitComment(attId) {
     const text = commentInputs[attId]?.trim();
@@ -68,7 +70,7 @@ export default function AttendancePage() {
       await createAttendance({ ...form, student_id: selectedId, reporter_id: form.reporter_id || null });
       showToast('출석이 등록되었습니다.');
       setShowModal(false);
-      setForm(EMPTY_FORM);
+      setForm(emptyForm());
       loadAtt(selectedId);
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
   }

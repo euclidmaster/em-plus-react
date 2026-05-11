@@ -3,6 +3,7 @@ import { getDailyRecords, createDailyRecord, updateDailyRecord, deleteDailyRecor
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
+import { todayLocal } from '../lib/dateUtil.js';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
 const COLORS = ['blue','green','orange','purple','red'];
@@ -11,7 +12,7 @@ const colorMap = { blue:'#4361ee', green:'#2dc653', orange:'#f4a261', purple:'#7
 export default function DailyRecordPage() {
   const { students } = useStudentList();
   const [selectedId, setSelectedId] = useState(null);
-  const [date, setDate]           = useState(new Date().toISOString().slice(0,10));
+  const [date, setDate]           = useState(todayLocal());
   const [records, setRecords]     = useState([]);
   const [drafts, setDrafts]       = useState([]);
   const [editingId, setEditingId] = useState(null);
@@ -19,15 +20,15 @@ export default function DailyRecordPage() {
   const showToast = useToast();
 
   useEffect(() => {
-    if (students.length && selectedId === null) setSelectedId(students[0].id);
-  }, [students]);
-
-  useEffect(() => { if (selectedId) load(); }, [selectedId, date]);
+    if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     try { setRecords(await getDailyRecords(selectedId, date)); setDrafts([]); setEditingId(null); }
     catch { showToast('기록 로드 실패', 'error'); }
   }
+
+  useEffect(() => { if (selectedId) load(); }, [selectedId, date]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
 
   function addDraft() {
     setDrafts(prev => [...prev, { subject:'국어', material:'', study_range:'', study_minutes:'' }]);

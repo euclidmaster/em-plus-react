@@ -3,17 +3,11 @@ import { getWeeklyPlans, upsertWeeklyPlan, deleteWeeklyPlan } from '../lib/api.j
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
+import { getMonday } from '../lib/dateUtil.js';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
 const COLORS   = ['blue','green','orange','purple','red'];
 const MAT_TYPES = ['교재','프린트','인강'];
-
-function getMonday(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
-  return d.toISOString().slice(0,10);
-}
 
 export default function WeeklyPlanPage() {
   const { students } = useStudentList();
@@ -23,17 +17,17 @@ export default function WeeklyPlanPage() {
   const showToast = useToast();
 
   useEffect(() => {
-    if (students.length && selectedId === null) setSelectedId(students[0].id);
-  }, [students]);
-
-  useEffect(() => {
-    if (selectedId) load();
-  }, [selectedId, weekStart]);
+    if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     try { setPlans(await getWeeklyPlans(selectedId, weekStart)); }
     catch { showToast('플랜 로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    if (selectedId) load(); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [selectedId, weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addPlan() {
     setPlans(prev => [...prev, { id:null, student_id: selectedId, week_start: weekStart, subject:'국어', main_material:'', sub_material:'', study_range:'', material_types:[] }]);

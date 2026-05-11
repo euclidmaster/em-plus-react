@@ -1,22 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStudentSelf } from '../../hooks/useStudentSelf.js';
 import { getHomeworks } from '../../lib/api.js';
 import { useToast } from '../../components/common/Toast.jsx';
+import { todayLocal } from '../../lib/dateUtil.js';
 
 export default function StudentHomeworkPage() {
   const { student, loading } = useStudentSelf();
   const [homeworks, setHomeworks] = useState([]);
   const [filter, setFilter]       = useState('미완료'); // '전체' | '미완료' | '완료'
   const showToast = useToast();
-
-  useEffect(() => {
-    if (student) load();
-  }, [student]);
+  const today = useMemo(() => todayLocal(), []);
 
   async function load() {
     try { setHomeworks(await getHomeworks(student.id)); }
     catch { showToast('숙제 로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    if (student) load(); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [student]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <div style={{ padding:40, textAlign:'center', color:'#94a3b8' }}>로딩 중...</div>;
   if (!student) return <p style={{ padding:40, textAlign:'center', color:'#64748b' }}>연결된 학생 계정이 없습니다.</p>;
@@ -77,7 +79,7 @@ export default function StudentHomeworkPage() {
             {filtered.length === 0
               ? <tr><td colSpan={5} style={{ textAlign:'center', padding:30, color:'#94a3b8' }}>숙제가 없습니다.</td></tr>
               : filtered.map(hw => {
-                const overdue = !hw.is_done && hw.due_date < new Date().toISOString().slice(0,10);
+                const overdue = !hw.is_done && hw.due_date < today;
                 return (
                   <tr key={hw.id} style={{ borderBottom:'1px solid #f1f5f9', opacity: hw.is_done ? 0.55 : 1, background: overdue ? '#fff5f5' : '' }}>
                     <td style={{ padding:'10px 14px', textAlign:'center' }}>

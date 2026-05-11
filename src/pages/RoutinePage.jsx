@@ -11,6 +11,7 @@ import {
   upsertRoutineLog,
   getRoutineHistory,
 } from '../lib/api.js';
+import { todayLocal } from '../lib/dateUtil.js';
 
 const SUBJECTS = ['영어', '수학', '국어', '과학', '사회', '기타'];
 const SUBJECT_COLORS = {
@@ -19,7 +20,7 @@ const SUBJECT_COLORS = {
 };
 function sc(s) { return SUBJECT_COLORS[s] ?? '#64748b'; }
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = todayLocal;
 
 /* ═══════════════════════════════════════
    메인 페이지
@@ -44,7 +45,7 @@ export default function RoutinePage() {
 
   useEffect(() => {
     if (students.length && !studentId) setStudentId(students[0].id);
-  }, [students]);
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (studentId) load();
@@ -306,6 +307,7 @@ function CheckRow({ template, log, onToggle, onComment }) {
   const [draft, setDraft] = useState(log?.comment ?? '');
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(log?.comment ?? '');
     if (log?.comment) setCommentOpen(true);
   }, [log?.comment]);

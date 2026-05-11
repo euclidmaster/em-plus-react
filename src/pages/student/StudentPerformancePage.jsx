@@ -3,6 +3,7 @@ import { useStudentSelf } from '../../hooks/useStudentSelf.js';
 import { getPerformances, createPerformance, updatePerformance, deletePerformance } from '../../lib/api.js';
 import { useToast } from '../../components/common/Toast.jsx';
 import AttachmentInput from '../../components/common/AttachmentInput.jsx';
+import { toLocalDateString } from '../../lib/dateUtil.js';
 
 const EVAL_TYPES = [
   '평가형 (단순 문제풀이)',
@@ -39,14 +40,14 @@ export default function StudentPerformancePage() {
   const [form, setForm]     = useState(EMPTY_FORM);
   const showToast = useToast();
 
-  useEffect(() => {
-    if (student) load();
-  }, [student]);
-
   async function load() {
     try { setPerformances(await getPerformances(student.id)); }
     catch { showToast('로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    if (student) load(); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [student]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openAdd() { setForm(EMPTY_FORM); setModal('add'); }
 
@@ -214,7 +215,7 @@ function CalendarView({ performances }) {
   const today = new Date();
   const [year, setYear]   = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-  const [sel, setSel]     = useState(today.toISOString().slice(0,10));
+  const [sel, setSel]     = useState(toLocalDateString(today));
 
   const dateMap = useMemo(() => {
     const map = {};
@@ -230,7 +231,7 @@ function CalendarView({ performances }) {
   const firstDay    = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const cells       = [...Array(firstDay).fill(null), ...Array.from({length:daysInMonth}, (_,i) => i+1)];
-  const todayStr    = today.toISOString().slice(0,10);
+  const todayStr    = toLocalDateString(today);
   const selItems    = dateMap[sel] ?? [];
   const pad = n => String(n).padStart(2,'0');
   const cellDate = d => `${year}-${pad(month+1)}-${pad(d)}`;

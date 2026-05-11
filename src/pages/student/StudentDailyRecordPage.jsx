@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStudentSelf } from '../../hooks/useStudentSelf.js';
 import { getDailyRecords, createDailyRecord, updateDailyRecord, deleteDailyRecord } from '../../lib/api.js';
 import { useToast } from '../../components/common/Toast.jsx';
+import { todayLocal, toLocalDateString } from '../../lib/dateUtil.js';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
 const COLORS   = ['blue','green','orange','purple','red'];
@@ -9,19 +10,20 @@ const colorMap = { blue:'#4361ee', green:'#2dc653', orange:'#f4a261', purple:'#7
 
 export default function StudentDailyRecordPage() {
   const { student, loading } = useStudentSelf();
-  const [date, setDate]         = useState(new Date().toISOString().slice(0,10));
+  const [date, setDate]         = useState(todayLocal());
   const [records, setRecords]   = useState([]);
   const [drafts, setDrafts]     = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData]   = useState({});
   const showToast = useToast();
 
-  useEffect(() => { if (student) load(); }, [student, date]);
-
   async function load() {
     try { setRecords(await getDailyRecords(student.id, date)); setDrafts([]); setEditingId(null); }
     catch { showToast('기록 로드 실패', 'error'); }
   }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (student) load(); }, [student, date]);
 
   function addDraft() {
     setDrafts(prev => [...prev, { subject:'국어', material:'', study_range:'', study_minutes:'' }]);
@@ -75,16 +77,16 @@ export default function StudentDailyRecordPage() {
 
       <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:20, flexWrap:'wrap' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <button onClick={() => setDate(d => { const dt = new Date(d); dt.setDate(dt.getDate()-1); return dt.toISOString().slice(0,10); })} style={navBtn}>
+          <button onClick={() => setDate(d => { const dt = new Date(d); dt.setDate(dt.getDate()-1); return toLocalDateString(dt); })} style={navBtn}>
             <i className="fas fa-chevron-left"></i>
           </button>
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             style={{ padding:'8px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13 }} />
-          <button onClick={() => setDate(d => { const dt = new Date(d); dt.setDate(dt.getDate()+1); return dt.toISOString().slice(0,10); })} style={navBtn}>
+          <button onClick={() => setDate(d => { const dt = new Date(d); dt.setDate(dt.getDate()+1); return toLocalDateString(dt); })} style={navBtn}>
             <i className="fas fa-chevron-right"></i>
           </button>
         </div>
-        <button onClick={() => setDate(new Date().toISOString().slice(0,10))}
+        <button onClick={() => setDate(todayLocal())}
           style={{ padding:'8px 14px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:13, cursor:'pointer', background:'#fff', color:'#475569' }}>
           오늘
         </button>
