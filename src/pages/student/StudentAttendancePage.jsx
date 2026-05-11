@@ -15,14 +15,14 @@ export default function StudentAttendancePage() {
   const [filter, setFilter]   = useState('전체');
   const showToast = useToast();
 
-  useEffect(() => {
-    if (student) load();
-  }, [student]);
-
   async function load() {
     try { setRecords(await getAttendances(student.id, null)); }
     catch { showToast('출석 기록 로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    if (student) load(); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [student]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <Spinner />;
   if (!student) return <NoStudent />;

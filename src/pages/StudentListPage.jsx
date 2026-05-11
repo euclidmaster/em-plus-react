@@ -4,14 +4,17 @@ import { createStudent, getTeachers, addStudentTeacher } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
+import { useDebounce } from '../hooks/useDebounce.js';
 
-const GRADE_OPTIONS = ['중1', '중2', '중3', '고1', '고2', '고3'];
+const GRADE_OPTIONS = ['초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'];
 const GRADE_FILTERS = ['전체', ...GRADE_OPTIONS];
 const STATUS_FILTERS = ['전체', '재원중', '휴원', '퇴원'];
 
 function normalizeGrade(grade) {
   if (!grade) return '기타';
   const g = grade.replace(/\s/g, '');
+  if ((g.includes('초') || g.includes('초등')) && g.includes('5')) return '초5';
+  if ((g.includes('초') || g.includes('초등')) && g.includes('6')) return '초6';
   if (g.includes('중') && g.includes('1')) return '중1';
   if (g.includes('중') && g.includes('2')) return '중2';
   if (g.includes('중') && g.includes('3')) return '중3';
@@ -36,6 +39,7 @@ export default function StudentListPage() {
   const [classFilter, setClassFilter] = useState('전체');
   const [statusFilter, setStatusFilter] = useState('전체');
   const [searchQ, setSearchQ]         = useState('');
+  const debouncedQ = useDebounce(searchQ);
   const [showModal, setShowModal]     = useState(false);
   const [form, setForm] = useState({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
   const showToast = useToast();
@@ -68,8 +72,8 @@ export default function StudentListPage() {
   const filtered = statusBase.filter(s => {
     if (gradeFilter !== '전체' && normalizeGrade(s.grade) !== gradeFilter) return false;
     if (classFilter !== '전체' && s.class_name !== classFilter) return false;
-    if (searchQ) {
-      const q = searchQ.toLowerCase();
+    if (debouncedQ) {
+      const q = debouncedQ.toLowerCase();
       return (
         s.name.toLowerCase().includes(q) ||
         (s.school_name ?? '').toLowerCase().includes(q) ||
@@ -227,7 +231,7 @@ export default function StudentListPage() {
           </thead>
           <tbody>
             {filtered.length === 0
-              ? <tr><td colSpan={8} style={{ textAlign:'center', padding:40, color:'#94a3b8' }}>해당하는 학생이 없습니다.</td></tr>
+              ? <tr><td colSpan={9} style={{ textAlign:'center', padding:40, color:'#94a3b8' }}>해당하는 학생이 없습니다.</td></tr>
               : filtered.map((s, i) => (
                 <tr
                   key={s.id}

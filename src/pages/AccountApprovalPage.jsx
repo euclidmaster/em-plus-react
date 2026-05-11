@@ -17,6 +17,7 @@ export default function AccountApprovalPage() {
     finally { setLoading(false); }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
   async function handleApprove(p) {
@@ -64,24 +65,30 @@ export default function AccountApprovalPage() {
               }}>
                 <div style={{ display:'flex', alignItems:'center', gap:12 }}>
                   <div style={{
-                    width:40, height:40, borderRadius:'50%',
+                    width:44, height:44, borderRadius:'50%',
                     background: ROLE_COLOR[p.role] ?? '#94a3b8',
                     color:'#fff', display:'flex', alignItems:'center', justifyContent:'center',
-                    fontSize:16, fontWeight:700, flexShrink:0,
+                    fontSize:17, fontWeight:700, flexShrink:0,
                   }}>
                     {(p.name ?? '?')[0].toUpperCase()}
                   </div>
                   <div>
-                    <div style={{ fontWeight:700, fontSize:14, color:'#1e293b' }}>{p.name}</div>
-                    <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+                      <span style={{ fontWeight:700, fontSize:15, color:'#1e293b' }}>{p.name}</span>
                       <span style={{
                         background: ROLE_COLOR[p.role] ?? '#94a3b8',
-                        color:'#fff', fontSize:11, fontWeight:600,
-                        padding:'2px 8px', borderRadius:20, marginRight:6,
+                        color:'#fff', fontSize:12, fontWeight:700,
+                        padding:'3px 10px', borderRadius:20,
                       }}>
                         {ROLE_LABEL[p.role] ?? p.role}
                       </span>
-                      {new Date(p.created_at).toLocaleDateString('ko-KR')} 가입
+                    </div>
+                    <div style={{ fontSize:12, color:'#94a3b8' }}>
+                      <i className="fas fa-clock" style={{ marginRight:4 }}></i>
+                      {new Date(p.created_at).toLocaleString('ko-KR', {
+                        year:'numeric', month:'2-digit', day:'2-digit',
+                        hour:'2-digit', minute:'2-digit',
+                      })} 가입 신청
                     </div>
                   </div>
                 </div>

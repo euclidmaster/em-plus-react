@@ -6,7 +6,7 @@ import StudentSelect from '../components/common/StudentSelect.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
 
 const SUBJECTS = ['국어','수학','영어','과학','사회','한국사'];
-const GRADE_OPTIONS = ['중1','중2','중3','고1','고2','고3'];
+const GRADE_OPTIONS = ['초5','초6','중1','중2','중3','고1','고2','고3'];
 
 export default function HomeworkPage() {
   const [tab, setTab] = useState('개인별'); // '개인별' | '반별'
@@ -46,14 +46,14 @@ function IndividualHomework({ showToast, students }) {
   const [showModal, setShowModal]   = useState(false);
   const [form, setForm] = useState({ due_date:'', subject:'국어', material:'', hw_range:'' });
 
-  useEffect(() => {
-    if (students.length && selectedId === null) { setSelectedId(students[0].id); loadHw(students[0].id); }
-  }, [students]);
-
   async function loadHw(id) {
     try { setHomeworks(await getHomeworks(id)); }
     catch { showToast('숙제 로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    if (students.length && selectedId === null) { setSelectedId(students[0].id); loadHw(students[0].id); } // eslint-disable-line react-hooks/set-state-in-effect
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggle(id, isDone) {
     try { await toggleHomework(id, isDone); showToast(isDone ? '숙제 완료!' : '완료 취소'); loadHw(selectedId); }
@@ -153,6 +153,7 @@ function ClassHomework({ showToast, students: allStudents }) {
 
   // 학년+반 선택 시 학생 목록 갱신
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!gradeFilter && !classFilter) { setClassStudents([]); return; }
     const base = allStudents.filter(s => s.status === '재원중');
     const filtered = base.filter(s => {

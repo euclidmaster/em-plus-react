@@ -12,7 +12,6 @@ export default function ProfilePage() {
   const [name, setName]       = useState(profile?.name ?? '');
   const [savingName, setSavingName] = useState(false);
 
-  const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw]         = useState('');
   const [confirmPw, setConfirmPw] = useState('');
   const [savingPw, setSavingPw]   = useState(false);
@@ -39,7 +38,7 @@ export default function ProfilePage() {
       const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
       showToast('비밀번호가 변경되었습니다.');
-      setCurrentPw(''); setNewPw(''); setConfirmPw('');
+      setNewPw(''); setConfirmPw('');
     } catch (e) { showToast('변경 실패: ' + e.message, 'error'); }
     finally { setSavingPw(false); }
   }

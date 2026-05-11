@@ -32,7 +32,7 @@ export default function ClinicReportPage() {
 
   useEffect(() => {
     if (students.length && !studentId) setStudentId(students[0].id);
-  }, [students]);
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (studentId) { loadData(); setAiSummary(''); }

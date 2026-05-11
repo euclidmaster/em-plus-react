@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getStudent, updateStudent, deleteStudent, getTeachers,
@@ -31,21 +31,16 @@ export default function StudentInfoPage() {
   const [notes, setNotes]                   = useState([]);
   const [noteInput, setNoteInput]           = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState(new Set());
-  const [recipientGroups, setRecipientGroups] = useState({ student:[], assigned:[], teachers:[], admins:[] });
+  const [editingClassName, setEditingClassName] = useState(false);
+  const [classNameValue, setClassNameValue] = useState('');
   const showToast = useToast();
   const { profile } = useAuth();
+  const role = profile?.role ?? 'teacher';
+  const isAdmin = role === 'admin';
 
   useEffect(() => {
     getTeachers().then(setTeachers).catch(console.error);
   }, []);
-
-  useEffect(() => {
-    if (!students.length || initDone.current) return;
-    initDone.current = true;
-    const urlId = searchParams.get('id');
-    const initId = urlId ?? students[0].id;
-    if (initId) selectStudent(initId);
-  }, [students]);
 
   async function selectStudent(id) {
     setSelectedId(id);
@@ -56,7 +51,7 @@ export default function StudentInfoPage() {
     setNotes([]);
     setNoteInput('');
     setSelectedRecipients(new Set());
-    setSearchParams({ id });
+    setSearchParams({ id }, { replace: true });
     try {
       const [d, assigned, noteList] = await Promise.all([
         getStudent(id), getStudentTeachers(id), getTeacherNotes(id),
@@ -65,38 +60,43 @@ export default function StudentInfoPage() {
       setAssignedTeachers(assigned);
       setNotes(noteList);
       setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', status: d.status });
+      setClassNameValue(d.class_name ?? '');
+      setEditingClassName(false);
 
-      // 담당 선생님 profile_id 목록
-      const assignedProfileIds = new Set(
-        assigned.map(a => a.teachers?.profile_id).filter(Boolean)
-      );
-
-      // 학생
-      const studentGroup = [];
       if (d.profile_id) {
         const prof = await getStudentLinkedProfile(d.profile_id);
         setLinkedProfile(prof);
-        if (prof) studentGroup.push({ id: prof.id, name: prof.name });
       } else {
         const unlinked = await getUnlinkedStudentProfiles();
         setUnlinkedProfiles(unlinked);
       }
-
-      // teachers 테이블에서 profile_id 있는 선생님 — 본인 제외
-      // (teachers 테이블은 RLS 없이 접근 가능)
-      const assignedGroup = [], teachersGroup = [];
-      teachers.forEach(t => {
-        if (!t.profile_id || t.profile_id === profile?.id) return;
-        if (assignedProfileIds.has(t.profile_id)) {
-          assignedGroup.push({ id: t.profile_id, name: t.name });
-        } else {
-          teachersGroup.push({ id: t.profile_id, name: t.name });
-        }
-      });
-
-      setRecipientGroups({ student: studentGroup, assigned: assignedGroup, teachers: teachersGroup, admins: [] });
     } catch { showToast('학생 정보 로드 실패', 'error'); }
   }
+
+  // 수신자 그룹은 detail/assignedTeachers/teachers/linkedProfile/profile에서 파생
+  // (selectStudent 호출 시점과 teachers 로드 시점 race condition 회피)
+  const recipientGroups = useMemo(() => {
+    if (!detail) return { student:[], assigned:[], teachers:[], admins:[] };
+    const assignedProfileIds = new Set(
+      assignedTeachers.map(a => a.teachers?.profile_id).filter(Boolean)
+    );
+    const studentGroup = linkedProfile ? [{ id: linkedProfile.id, name: linkedProfile.name }] : [];
+    const assignedGroup = [], teachersGroup = [];
+    teachers.forEach(t => {
+      if (!t.profile_id || t.profile_id === profile?.id) return;
+      if (assignedProfileIds.has(t.profile_id)) assignedGroup.push({ id: t.profile_id, name: t.name });
+      else teachersGroup.push({ id: t.profile_id, name: t.name });
+    });
+    return { student: studentGroup, assigned: assignedGroup, teachers: teachersGroup, admins: [] };
+  }, [detail, assignedTeachers, teachers, linkedProfile, profile]);
+
+  useEffect(() => {
+    if (!students.length || initDone.current) return;
+    initDone.current = true;
+    const urlId = searchParams.get('id');
+    const initId = urlId ?? students[0].id;
+    if (initId) selectStudent(initId); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleRecipient(id) {
     setSelectedRecipients(prev => {
@@ -183,6 +183,17 @@ export default function StudentInfoPage() {
     } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }
   }
 
+  async function saveClassName() {
+    try {
+      await updateStudent(selectedId, { class_name: classNameValue });
+      showToast('반 정보가 저장되었습니다.');
+      setEditingClassName(false);
+      const d = await getStudent(selectedId);
+      setDetail(d);
+      setForm(f => ({ ...f, class_name: d.class_name ?? '' }));
+    } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }
+  }
+
   async function remove() {
     if (!confirm(`"${detail.name}" 학생을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
     try {
@@ -236,28 +247,30 @@ export default function StudentInfoPage() {
           <div className="card">
             <div className="card-header" style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <h3><i className="fas fa-id-card"></i> 기본 정보</h3>
-              <div style={{ display:'flex', gap:8 }}>
-                {!editing ? (
-                  <>
-                    <button className="btn-sm-outline" onClick={() => setEditing(true)}>
-                      <i className="fas fa-edit"></i> 수정
-                    </button>
-                    <button onClick={remove} style={{
-                      padding:'6px 14px', border:'1.5px solid #fca5a5', borderRadius:8,
-                      background:'#fff', color:'#dc2626', cursor:'pointer', fontSize:13, fontWeight:600,
-                    }}>
-                      <i className="fas fa-trash"></i> 삭제
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button onClick={() => setEditing(false)} style={{ padding:'6px 14px', border:'1.5px solid #e2e8f0', borderRadius:8, background:'#fff', cursor:'pointer', fontSize:13 }}>취소</button>
-                    <button onClick={save} style={{ padding:'6px 14px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 }}>
-                      <i className="fas fa-save"></i> 저장
-                    </button>
-                  </>
-                )}
-              </div>
+              {isAdmin && (
+                <div style={{ display:'flex', gap:8 }}>
+                  {!editing ? (
+                    <>
+                      <button className="btn-sm-outline" onClick={() => setEditing(true)}>
+                        <i className="fas fa-edit"></i> 수정
+                      </button>
+                      <button onClick={remove} style={{
+                        padding:'6px 14px', border:'1.5px solid #fca5a5', borderRadius:8,
+                        background:'#fff', color:'#dc2626', cursor:'pointer', fontSize:13, fontWeight:600,
+                      }}>
+                        <i className="fas fa-trash"></i> 삭제
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditing(false)} style={{ padding:'6px 14px', border:'1.5px solid #e2e8f0', borderRadius:8, background:'#fff', cursor:'pointer', fontSize:13 }}>취소</button>
+                      <button onClick={save} style={{ padding:'6px 14px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 }}>
+                        <i className="fas fa-save"></i> 저장
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             <div style={{ display:'grid', gap:14, marginTop:16 }}>
               {[
@@ -280,19 +293,48 @@ export default function StudentInfoPage() {
                   ? <select value={form.grade ?? ''} onChange={e => setForm(f => ({...f, grade: e.target.value}))}
                       style={{ flex:1, padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14 }}>
                       <option value="">선택</option>
-                      {['중1','중2','중3','고1','고2','고3'].map(g => <option key={g} value={g}>{g}</option>)}
+                      {['초5','초6','중1','중2','중3','고1','고2','고3'].map(g => <option key={g} value={g}>{g}</option>)}
                     </select>
                   : <span style={{ flex:1, fontSize:14 }}>{detail.grade ?? '-'}</span>
                 }
               </div>
               <div style={{ display:'flex', alignItems:'center', gap:16 }}>
                 <span style={labelStyle}>반</span>
-                {editing
-                  ? <input type="text" value={form.class_name ?? ''} onChange={e => setForm(f => ({...f, class_name: e.target.value}))}
-                      placeholder="예: 수학 심화반"
-                      style={{ flex:1, padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14 }} />
-                  : <span style={{ flex:1, fontSize:14 }}>{detail.class_name ?? '-'}</span>
-                }
+                {isAdmin ? (
+                  editing
+                    ? <input type="text" value={form.class_name ?? ''} onChange={e => setForm(f => ({...f, class_name: e.target.value}))}
+                        placeholder="예: 수학 심화반"
+                        style={{ flex:1, padding:'8px 12px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14 }} />
+                    : <span style={{ flex:1, fontSize:14 }}>{detail.class_name ?? '-'}</span>
+                ) : editingClassName ? (
+                  <div style={{ flex:1, display:'flex', gap:6, alignItems:'center' }}>
+                    <input
+                      type="text"
+                      autoFocus
+                      value={classNameValue}
+                      onChange={e => setClassNameValue(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') saveClassName(); if (e.key === 'Escape') setEditingClassName(false); }}
+                      placeholder="예: 영어중2반"
+                      style={{ flex:1, padding:'7px 10px', border:'1.5px solid #4361ee', borderRadius:8, fontSize:14 }}
+                    />
+                    <button onClick={saveClassName} style={{ padding:'6px 12px', background:'#4361ee', color:'#fff', border:'none', borderRadius:7, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                      저장
+                    </button>
+                    <button onClick={() => setEditingClassName(false)} style={{ padding:'6px 10px', background:'#f1f5f9', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:7, fontSize:12, cursor:'pointer' }}>
+                      취소
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ flex:1, display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:14 }}>{detail.class_name ?? '-'}</span>
+                    <button
+                      onClick={() => { setClassNameValue(detail.class_name ?? ''); setEditingClassName(true); }}
+                      style={{ padding:'3px 9px', background:'#f1f5f9', color:'#4361ee', border:'1px solid #c7d2fe', borderRadius:6, fontSize:12, cursor:'pointer', fontWeight:600 }}
+                    >
+                      <i className="fas fa-pen" style={{ fontSize:10, marginRight:3 }} />수정
+                    </button>
+                  </div>
+                )}
               </div>
               {/* 담당강사는 별도 카드에서 관리 */}
               <div style={{ display:'flex', alignItems:'center', gap:16 }}>

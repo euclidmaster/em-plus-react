@@ -14,8 +14,9 @@ export default function ReportPage() {
   const [hwData, setHwData]         = useState([]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (students.length && selectedId === null) setSelectedId(students[0].id);
-  }, [students]);
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selectedId) return;

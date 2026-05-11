@@ -54,6 +54,7 @@ export default function SubjectGuidePage() {
     <div>
       <div className="section-title-area">
         <h2><i className="fas fa-graduation-cap"></i> 2026학년도 교과선택 가이드</h2>
+        <p style={{ margin:'4px 0 0', fontSize:13, color:'#64748b' }}>수원시 장안구 고등학교 맞춤형 교과 선택 프로그램</p>
       </div>
 
       {/* 단계 표시 */}

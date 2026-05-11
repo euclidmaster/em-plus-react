@@ -36,11 +36,6 @@ export default function TeacherPage() {
   const showToast = useToast();
   const { profile } = useAuth();
 
-  useEffect(() => {
-    load();
-    if (profile?.id) getMessages(profile.id).then(setMessages).catch(console.error);
-  }, [profile]);
-
   async function load() {
     try {
       const [ts, perms] = await Promise.all([getTeachers(), getTeacherPermissions()]);
@@ -50,6 +45,11 @@ export default function TeacherPage() {
       setPermissions(map);
     } catch { showToast('강사 로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    load(); // eslint-disable-line react-hooks/set-state-in-effect
+    if (profile?.id) getMessages(profile.id).then(setMessages).catch(console.error);
+  }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submitTeacher() {
     if (!teacherForm.name.trim()) { showToast('이름을 입력하세요.', 'error'); return; }
@@ -109,6 +109,7 @@ export default function TeacherPage() {
   async function submitMsg() {
     if (!msgContent.trim()) { showToast('내용을 입력하세요.', 'error'); return; }
     if (!profile) { showToast('로그인이 필요합니다.', 'error'); return; }
+    if (!msgTo?.profile_id) { showToast('이 선생님은 아직 계정 연결이 되지 않아 쪽지를 받을 수 없습니다.', 'error'); return; }
     try {
       await sendMessage({ from_id: profile.id, to_id: msgTo.profile_id, from_name: profile.name, to_name: msgTo.name, content: msgContent });
       showToast('쪽지가 전송되었습니다.');

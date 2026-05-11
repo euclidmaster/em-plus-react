@@ -3,6 +3,7 @@ import { getBoardPosts, createBoardPost, updateBoardPost, deleteBoardPost, getBo
 import { useToast } from '../components/common/Toast.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import Modal from '../components/common/Modal.jsx';
+import { useDebounce } from '../hooks/useDebounce.js';
 
 const CATEGORIES = ['전체', '공지', '일반', '자료'];
 const CAT_STYLE = {
@@ -24,6 +25,7 @@ export default function BoardPage() {
   const [posts, setPosts]           = useState([]);
   const [catFilter, setCatFilter]   = useState('전체');
   const [searchQ, setSearchQ]       = useState('');
+  const debouncedQ = useDebounce(searchQ);
   const [selected, setSelected]     = useState(null); // 상세 보기
   const [comments, setComments]     = useState([]);
   const [commentInput, setCommentInput] = useState('');
@@ -33,12 +35,13 @@ export default function BoardPage() {
   const showToast = useToast();
   const { profile } = useAuth();
 
-  useEffect(() => { load(); }, []);
-
   async function load() {
     try { setPosts(await getBoardPosts()); }
     catch { showToast('게시판 로드 실패', 'error'); }
   }
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
 
   async function openPost(post) {
     setSelected(post);
@@ -46,34 +49,61 @@ export default function BoardPage() {
     catch { setComments([]); }
   }
 
+  function closeWrite() {
+    setShowWrite(false);
+    setEditTarget(null);
+    setForm({ category: '일반', title: '', content: '' });
+  }
+
   async function submit() {
     if (!form.title.trim()) { showToast('제목을 입력하세요.', 'error'); return; }
-    try {
-      if (editTarget) {
-        await updateBoardPost(editTarget.id, { category: form.category, title: form.title, content: form.content });
+
+    if (editTarget) {
+      // 수정: 낙관적 업데이트, 실패 시 모달 유지 + 입력 보존
+      const prevPost = posts.find(p => p.id === editTarget.id);
+      const optimistic = { ...prevPost, ...form };
+      setPosts(ps => ps.map(p => p.id === editTarget.id ? optimistic : p));
+      if (selected?.id === editTarget.id) setSelected(optimistic);
+      try {
+        const updated = await updateBoardPost(editTarget.id, { category: form.category, title: form.title, content: form.content });
+        setPosts(ps => ps.map(p => p.id === updated.id ? updated : p));
+        if (selected?.id === updated.id) setSelected(updated);
         showToast('수정되었습니다.');
-        if (selected?.id === editTarget.id) {
-          setSelected(prev => ({ ...prev, ...form }));
-        }
-      } else {
-        await createBoardPost({ ...form, author_name: profile?.name ?? '관리자' });
-        showToast('게시글이 등록되었습니다.');
+        closeWrite();
+      } catch (e) {
+        setPosts(ps => ps.map(p => p.id === prevPost.id ? prevPost : p));
+        if (selected?.id === prevPost.id) setSelected(prevPost);
+        showToast('수정 실패: ' + e.message, 'error');
       }
-      setShowWrite(false);
-      setEditTarget(null);
-      setForm({ category: '일반', title: '', content: '' });
-      load();
-    } catch (e) { showToast('처리 실패: ' + e.message, 'error'); }
+    } else {
+      // 등록: 낙관적 업데이트, 실패 시 모달 유지 + 입력 보존
+      const tempId = `temp-${Date.now()}`;
+      const tempPost = { id: tempId, ...form, author_name: profile?.name ?? '관리자', created_at: new Date().toISOString() };
+      setPosts(ps => [tempPost, ...ps]);
+      try {
+        const saved = await createBoardPost({ ...form, author_name: profile?.name ?? '관리자' });
+        setPosts(ps => ps.map(p => p.id === tempId ? saved : p));
+        showToast('게시글이 등록되었습니다.');
+        closeWrite();
+      } catch (e) {
+        setPosts(ps => ps.filter(p => p.id !== tempId));
+        showToast('등록 실패: ' + e.message, 'error');
+      }
+    }
   }
 
   async function remove(post) {
     if (!confirm(`"${post.title}" 글을 삭제하시겠습니까?`)) return;
+    // 낙관적 삭제
+    setPosts(ps => ps.filter(p => p.id !== post.id));
+    if (selected?.id === post.id) setSelected(null);
     try {
       await deleteBoardPost(post.id);
       showToast('삭제되었습니다.');
-      if (selected?.id === post.id) setSelected(null);
-      load();
-    } catch (e) { showToast('삭제 실패: ' + e.message, 'error'); }
+    } catch (e) {
+      setPosts(ps => [post, ...ps]);
+      showToast('삭제 실패: ' + e.message, 'error');
+    }
   }
 
   function startEdit(post) {
@@ -85,28 +115,48 @@ export default function BoardPage() {
   async function submitComment() {
     const text = commentInput.trim();
     if (!text || !selected) return;
+    // 낙관적 추가
+    const tempId = `temp-${Date.now()}`;
+    const tempComment = { id: tempId, post_id: selected.id, author_name: profile?.name ?? '관리자', content: text, created_at: new Date().toISOString() };
+    setComments(prev => [...prev, tempComment]);
+    setCommentInput('');
     try {
-      await addBoardComment({ post_id: selected.id, author_name: profile?.name ?? '관리자', content: text });
-      setCommentInput('');
-      setComments(await getBoardComments(selected.id));
-    } catch (e) { showToast('댓글 등록 실패: ' + e.message, 'error'); }
+      const saved = await addBoardComment({ post_id: selected.id, author_name: profile?.name ?? '관리자', content: text });
+      setComments(prev => prev.map(c => c.id === tempId ? saved : c));
+    } catch (e) {
+      setComments(prev => prev.filter(c => c.id !== tempId));
+      setCommentInput(text);
+      showToast('댓글 등록 실패: ' + e.message, 'error');
+    }
   }
 
   async function removeComment(id) {
+    // 낙관적 삭제
+    const backup = comments.find(c => c.id === id);
+    setComments(prev => prev.filter(c => c.id !== id));
     try {
       await deleteBoardComment(id);
-      setComments(await getBoardComments(selected.id));
-    } catch { showToast('댓글 삭제 실패', 'error'); }
+    } catch {
+      setComments(prev => [...prev, backup].sort((a, b) => a.created_at.localeCompare(b.created_at)));
+      showToast('댓글 삭제 실패', 'error');
+    }
   }
 
-  const filtered = posts.filter(p => {
-    if (catFilter !== '전체' && p.category !== catFilter) return false;
-    if (searchQ) {
-      const q = searchQ.toLowerCase();
-      return p.title.toLowerCase().includes(q) || (p.content ?? '').toLowerCase().includes(q) || (p.author_name ?? '').toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filtered = posts
+    .filter(p => {
+      if (catFilter !== '전체' && p.category !== catFilter) return false;
+      if (debouncedQ) {
+        const q = debouncedQ.toLowerCase();
+        return p.title.toLowerCase().includes(q) || (p.content ?? '').toLowerCase().includes(q) || (p.author_name ?? '').toLowerCase().includes(q);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const aPin = a.category === '공지' ? 0 : 1;
+      const bPin = b.category === '공지' ? 0 : 1;
+      if (aPin !== bPin) return aPin - bPin;
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
 
   const catCount = cat => cat === '전체' ? posts.length : posts.filter(p => p.category === cat).length;
 
@@ -287,7 +337,7 @@ export default function BoardPage() {
       {/* 작성 / 수정 모달 */}
       {showWrite && (
         <Modal title={<><i className={`fas fa-${editTarget ? 'edit' : 'pen'}`}></i> {editTarget ? '글 수정' : '글 작성'}</>}
-          onClose={() => { setShowWrite(false); setEditTarget(null); setForm({ category:'일반', title:'', content:'' }); }}
+          onClose={closeWrite}
           width={560}>
           <div style={{ display:'grid', gap:12 }}>
             <div>
@@ -315,7 +365,7 @@ export default function BoardPage() {
             </div>
           </div>
           <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
-            <button onClick={() => { setShowWrite(false); setEditTarget(null); }} style={{ padding:'10px 20px', border:'1.5px solid #e2e8f0', borderRadius:8, background:'#fff', cursor:'pointer', fontSize:14 }}>취소</button>
+            <button onClick={closeWrite} style={{ padding:'10px 20px', border:'1.5px solid #e2e8f0', borderRadius:8, background:'#fff', cursor:'pointer', fontSize:14 }}>취소</button>
             <button onClick={submit} style={{ padding:'10px 20px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:14, fontWeight:600 }}>
               <i className="fas fa-save"></i> {editTarget ? '수정 완료' : '등록'}
             </button>

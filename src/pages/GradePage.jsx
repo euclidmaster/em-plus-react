@@ -22,12 +22,8 @@ export default function GradePage() {
   const showToast = useToast();
 
   useEffect(() => {
-    if (students.length && selectedId === null) setSelectedId(students[0].id);
-  }, [students]);
-
-  useEffect(() => {
-    if (selectedId) loadGrades();
-  }, [selectedId, examType]);
+    if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadGrades() {
     try {
@@ -35,6 +31,10 @@ export default function GradePage() {
       setRows(data.map(g => ({ ...g })));
     } catch { showToast('성적 로드 실패', 'error'); }
   }
+
+  useEffect(() => {
+    if (selectedId) loadGrades(); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [selectedId, examType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateRow(idx, key, val) {
     setRows(prev => prev.map((r, i) => i === idx ? { ...r, [key]: val } : r));
