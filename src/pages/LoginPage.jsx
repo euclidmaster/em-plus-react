@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { supabase } from '../lib/supabase.js';
+import { getClassNames } from '../lib/api.js';
 
 export default function LoginPage() {
   const [mode, setMode]   = useState('login');
@@ -19,9 +20,19 @@ export default function LoginPage() {
   const [error, setError]   = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [classOptions, setClassOptions] = useState([]);
+  const [customClassMode, setCustomClassMode] = useState(false);
 
   const { signIn } = useAuth();
   const navigate   = useNavigate();
+
+  // 회원가입 + 학생 역할일 때 학원 반 목록 페치 (실패 시 직접 입력 모드)
+  useEffect(() => {
+    if (mode !== 'signup' || role !== 'student') return;
+    getClassNames()
+      .then(opts => setClassOptions(opts ?? []))
+      .catch(() => setClassOptions([]));
+  }, [mode, role]);
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -63,6 +74,7 @@ export default function LoginPage() {
         setMode('login');
         setName(''); setEmail(''); setPw(''); setRole('student');
         setGrade(''); setClassName(''); setSchoolName(''); setPhone(''); setSubjects([]); setBranch('');
+        setCustomClassMode(false);
       }
     } catch (err) {
       setError(err.message);
@@ -188,14 +200,50 @@ export default function LoginPage() {
                 <Field label="학년" icon="fa-graduation-cap">
                   <select value={grade} onChange={e=>setGrade(e.target.value)} style={inputStyle}>
                     <option value="">선택 (선택사항)</option>
-                    {['중1','중2','중3','고1','고2','고3'].map(g=>(
+                    {['초5','초6','중1','중2','중3','고1','고2','고3'].map(g=>(
                       <option key={g} value={g}>{g}</option>
                     ))}
                   </select>
                 </Field>
                 <Field label="반" icon="fa-chalkboard">
-                  <input type="text" value={className} onChange={e=>setClassName(e.target.value)}
-                    placeholder="예: 수학심화반 (선택사항)" style={inputStyle} />
+                  {classOptions.length > 0 && !customClassMode ? (
+                    <select
+                      value={className}
+                      onChange={e => {
+                        if (e.target.value === '__OTHER__') { setCustomClassMode(true); }
+                        else setClassName(e.target.value);
+                      }}
+                      style={inputStyle}
+                    >
+                      <option value="">선택 안 함 (선택사항)</option>
+                      {classOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                      {/* 직접 입력 후 목록 모드로 돌아온 경우: 사용자 입력값 보존 */}
+                      {className && !classOptions.includes(className) && (
+                        <option value={className}>{className} (직접 입력)</option>
+                      )}
+                      <option value="__OTHER__">목록에 없음 (직접 입력)</option>
+                    </select>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="text"
+                        value={className}
+                        onChange={e => setClassName(e.target.value)}
+                        placeholder="예: 수학심화반 (선택사항)"
+                        style={{ ...inputStyle, flex: 1 }}
+                      />
+                      {classOptions.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomClassMode(false)}
+                          style={{ padding: '0 14px', border: '1.5px solid #e2e8f0', borderRadius: 10, background: '#fff', color: '#64748b', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                          title="목록에서 선택"
+                        >
+                          목록
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </Field>
                 <Field label="학교" icon="fa-school">
                   <input type="text" value={schoolName} onChange={e=>setSchoolName(e.target.value)}

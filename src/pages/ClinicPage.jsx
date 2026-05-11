@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../components/common/Toast.jsx';
+import Modal from '../components/common/Modal.jsx';
 import {
   getTeachers, getStudents, getTeacherByProfileId,
   getClinicSessions, createClinicSession, updateClinicSession, deleteClinicSession,
-  createClinicItem, updateClinicItem, deleteClinicItem,
+  createClinicItem, createClinicItems, updateClinicItem, deleteClinicItem,
   createClinicReply, updateClinicReply, deleteClinicReply,
+  getClassNames, getClinicClassTemplate, saveClinicClassTemplate,
 } from '../lib/api.js';
+import { todayLocal } from '../lib/dateUtil.js';
 
 const SUBJECTS    = ['영어', '수학', '과학', '국어', '사회', '기타'];
 const CLINIC_TYPES = ['단어TEST', '내신대비', '문제풀이', '재시험'];
@@ -29,12 +32,17 @@ export default function ClinicPage() {
   const isAssistant = role === 'assistant';
   const isAdmin     = role === 'admin';
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocal();
   const [date, setDate]               = useState(today);
-  const canEdit = isAdmin || date >= today;
+  const isFuture = date > today;
+  const isPast   = date < today;
+  const canEdit = isAdmin || !isPast;
   const [sessions, setSessions]       = useState([]);
   const [teachers, setTeachers]       = useState([]);
   const [students, setStudents]       = useState([]);
+  const [classNames, setClassNames]   = useState([]);
+  const [pickedClass, setPickedClass] = useState('');
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [myRecord, setMyRecord]       = useState(null);
   const [myRecordLoaded, setMyRecordLoaded] = useState(false);
   const [loading, setLoading]         = useState(true);
@@ -43,20 +51,21 @@ export default function ClinicPage() {
   useEffect(() => {
     async function init() {
       try {
-        const [t, s] = await Promise.all([getTeachers(), getStudents()]);
+        const [t, s, cn] = await Promise.all([getTeachers(), getStudents(), getClassNames().catch(() => [])]);
         setTeachers(t ?? []);
         setStudents((s ?? []).filter(st => st.status === '재원중'));
+        setClassNames(cn ?? []);
         if (profile?.id && (role === 'teacher' || role === 'assistant')) {
           const rec = await getTeacherByProfileId(profile.id);
           setMyRecord(rec);
         }
         setMyRecordLoaded(true);
-      } catch (e) {
+      } catch {
         showToast('참조 데이터 로드 실패', 'error');
       }
     }
     init();
-  }, [profile?.id, role]);
+  }, [profile?.id, role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const needsRecord = role === 'teacher' || role === 'assistant';
@@ -84,7 +93,7 @@ export default function ClinicPage() {
     }
   }
 
-  async function handleAddSession() {
+  async function handleAddSession(className = null) {
     const teacherId   = (role === 'teacher'   && myRecord) ? myRecord.id : null;
     const assistantId = (role === 'assistant' && myRecord) ? myRecord.id : null;
     try {
@@ -92,10 +101,50 @@ export default function ClinicPage() {
         teacher_id:   teacherId,
         assistant_id: assistantId,
         session_date: date,
+        class_name:   className,
       });
-      setSessions(prev => [...prev, newSession]);
+
+      // 반 템플릿이 있으면 해당 반의 학생/과목/유형/지시사항으로 아이템 일괄 생성
+      let items = [];
+      if (className) {
+        const tmpl = await getClinicClassTemplate(className).catch(() => []);
+        if (tmpl.length > 0) {
+          const rows = tmpl.map((t, i) => ({
+            session_id:   newSession.id,
+            student_id:   t.student_id,
+            subject:      t.subject       ?? '',
+            clinic_type:  t.clinic_type   ?? '',
+            instructions: t.instructions  ?? '',
+            result:       '',
+            sort_order:   i,
+          }));
+          const created = await createClinicItems(rows).catch(() => []);
+          items = created.map(it => ({ ...it, clinic_replies: [] }));
+        }
+      }
+
+      setSessions(prev => [...prev, { ...newSession, clinic_items: items }]);
+      if (className) {
+        showToast(items.length > 0
+          ? `${className} 반 명단 ${items.length}건이 자동 입력되었습니다.`
+          : `${className} 반 세션이 생성되었습니다. (저장된 템플릿 없음)`);
+      }
     } catch (e) {
       showToast('세션 추가 실패: ' + e.message, 'error');
+    }
+  }
+
+  async function handleSaveTemplate(session) {
+    const cn = session.class_name;
+    if (!cn) { showToast('반 이름이 지정되지 않은 세션입니다.', 'error'); return; }
+    const items = (session.clinic_items ?? []).filter(i => i.student_id);
+    if (items.length === 0) { showToast('저장할 학생이 없습니다.', 'error'); return; }
+    if (!window.confirm(`현재 명단을 "${cn}" 반 템플릿으로 저장하시겠습니까?\n(기존 템플릿은 덮어쓰기됩니다)`)) return;
+    try {
+      await saveClinicClassTemplate(cn, items);
+      showToast(`"${cn}" 반 템플릿이 저장되었습니다. (${items.length}건)`);
+    } catch (e) {
+      showToast('템플릿 저장 실패: ' + e.message, 'error');
     }
   }
 
@@ -105,7 +154,7 @@ export default function ClinicPage() {
       setSessions(prev => prev.map(s =>
         s.id === sessionId ? { ...s, ...updated } : s
       ));
-    } catch (e) {
+    } catch {
       showToast('업데이트 실패', 'error');
     }
   }
@@ -116,7 +165,7 @@ export default function ClinicPage() {
       await deleteClinicSession(sessionId);
       setSessions(prev => prev.filter(s => s.id !== sessionId));
       showToast('삭제되었습니다.');
-    } catch (e) {
+    } catch {
       showToast('삭제 실패', 'error');
     }
   }
@@ -152,7 +201,7 @@ export default function ClinicPage() {
     ));
     try {
       await updateClinicItem(itemId, patch);
-    } catch (e) {
+    } catch {
       showToast('저장 실패', 'error');
       loadSessions();
     }
@@ -166,7 +215,7 @@ export default function ClinicPage() {
           ? { ...s, clinic_items: s.clinic_items.filter(i => i.id !== itemId) }
           : s
       ));
-    } catch (e) {
+    } catch {
       showToast('삭제 실패', 'error');
     }
   }
@@ -207,7 +256,7 @@ export default function ClinicPage() {
             }
           : s
       ));
-    } catch (e) {
+    } catch {
       showToast('수정 실패', 'error');
     }
   }
@@ -227,7 +276,7 @@ export default function ClinicPage() {
             }
           : s
       ));
-    } catch (e) {
+    } catch {
       showToast('삭제 실패', 'error');
     }
   }
@@ -251,7 +300,7 @@ export default function ClinicPage() {
               <i className="fas fa-lock" /> 지난 날짜 — {isAdmin ? '' : '원장만 수정 가능'}
             </span>
           )}
-          {canEdit && date > today && (
+          {canEdit && isFuture && (
             <span style={{ fontSize: 12, color: '#4361ee', display: 'flex', alignItems: 'center', gap: 4 }}>
               <i className="fas fa-calendar-alt" /> 미리 입력 중
             </span>
@@ -262,9 +311,44 @@ export default function ClinicPage() {
             onChange={e => setDate(e.target.value)}
             style={{ padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 14, color: '#1e293b', background: '#fff' }}
           />
+          {canEdit && classNames.length > 0 && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              <select
+                value={pickedClass}
+                onChange={e => setPickedClass(e.target.value)}
+                style={{ padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, background: '#fff', minWidth: 110 }}
+                title="반에서 시작"
+              >
+                <option value="">반에서 시작...</option>
+                {classNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
+              </select>
+              <button
+                onClick={() => { if (!pickedClass) return; handleAddSession(pickedClass); setPickedClass(''); }}
+                disabled={!pickedClass}
+                style={{
+                  padding: '7px 14px',
+                  background: pickedClass ? '#7209b7' : '#e2e8f0',
+                  color: pickedClass ? '#fff' : '#94a3b8',
+                  border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  cursor: pickedClass ? 'pointer' : 'default',
+                }}
+              >
+                <i className="fas fa-users" /> 반 추가
+              </button>
+            </div>
+          )}
           {canEdit && (
             <button
-              onClick={handleAddSession}
+              onClick={() => setShowTemplateModal(true)}
+              style={{ padding: '7px 14px', background: '#fff', color: '#7209b7', border: '1.5px solid #c4b5fd', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              title="반 템플릿 관리"
+            >
+              <i className="fas fa-cog" /> 템플릿 관리
+            </button>
+          )}
+          {canEdit && (
+            <button
+              onClick={() => handleAddSession()}
               style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
             >
               <i className="fas fa-plus" /> 세션 추가
@@ -304,7 +388,22 @@ create table if not exists clinic_replies (
   author_name text default '',
   content text default '',
   created_at timestamptz default now()
-);`}
+);
+
+-- 반 템플릿 (반에서 시작 기능)
+alter table clinic_sessions add column if not exists class_name text;
+create table if not exists clinic_class_templates (
+  id uuid default gen_random_uuid() primary key,
+  class_name text not null,
+  student_id uuid references students(id) on delete cascade not null,
+  subject text default '',
+  clinic_type text default '',
+  instructions text default '',
+  sort_order int default 0,
+  updated_at timestamptz default now()
+);
+create index if not exists idx_clinic_class_templates_class_name
+  on clinic_class_templates (class_name);`}
           </code>
         </div>
       )}
@@ -334,6 +433,7 @@ create table if not exists clinic_replies (
               assistantList={assistantList}
               students={students}
               myRecord={myRecord}
+              classNames={classNames}
               onUpdateSession={handleUpdateSession}
               onDeleteSession={handleDeleteSession}
               onAddItem={handleAddItem}
@@ -342,9 +442,18 @@ create table if not exists clinic_replies (
               onAddReply={(itemId, payload) => handleAddReply(session.id, itemId, payload)}
               onUpdateReply={(itemId, replyId, content) => handleUpdateReply(session.id, itemId, replyId, content)}
               onDeleteReply={(itemId, replyId) => handleDeleteReply(session.id, itemId, replyId)}
+              onSaveTemplate={() => handleSaveTemplate(session)}
             />
           ))}
         </div>
+      )}
+
+      {showTemplateModal && (
+        <ClassTemplateModal
+          classNames={classNames}
+          students={students}
+          onClose={() => setShowTemplateModal(false)}
+        />
       )}
     </div>
   );
@@ -355,9 +464,9 @@ create table if not exists clinic_replies (
 ───────────────────────────────────────────── */
 function SessionCard({
   session, color, isAssistant, isAdmin, canEdit,
-  teacherList, assistantList, students, myRecord,
+  teacherList, assistantList, students, myRecord, classNames,
   onUpdateSession, onDeleteSession, onAddItem, onUpdateItem, onDeleteItem,
-  onAddReply, onUpdateReply, onDeleteReply,
+  onAddReply, onUpdateReply, onDeleteReply, onSaveTemplate,
 }) {
   const primaryId   = isAssistant ? session.assistant_id  : session.teacher_id;
   const secondaryId = isAssistant ? session.teacher_id    : session.assistant_id;
@@ -411,10 +520,57 @@ function SessionCard({
           </div>
         )}
 
+        {canEdit ? (
+          <select
+            value={session.class_name ?? ''}
+            onChange={e => onUpdateSession(session.id, { class_name: e.target.value || null })}
+            style={{
+              padding: '5px 10px',
+              border: '1.5px solid #c4b5fd',
+              borderRadius: 20,
+              background: session.class_name ? '#f3e8ff' : '#fff',
+              color: session.class_name ? '#7209b7' : '#94a3b8',
+              fontSize: 12, fontWeight: 700,
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+            title="반 지정/변경"
+          >
+            <option value="">반 미지정</option>
+            {classNames.map(cn => <option key={cn} value={cn}>{cn}</option>)}
+            {session.class_name && !classNames.includes(session.class_name) && (
+              <option value={session.class_name}>{session.class_name}</option>
+            )}
+          </select>
+        ) : session.class_name && (
+          <span style={{
+            background: '#f3e8ff', color: '#7209b7',
+            padding: '4px 10px', borderRadius: 20,
+            fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <i className="fas fa-users" style={{ fontSize: 10 }} /> {session.class_name}
+          </span>
+        )}
+
+        {canEdit && session.class_name && (
+          <button
+            onClick={onSaveTemplate}
+            style={{
+              marginLeft: 'auto',
+              padding: '5px 12px', background: '#fff', color: '#7209b7',
+              border: '1.5px solid #c4b5fd', borderRadius: 7,
+              fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}
+            title={`현재 명단을 "${session.class_name}" 반 템플릿으로 저장`}
+          >
+            <i className="fas fa-save" /> 명단 저장
+          </button>
+        )}
+
         {canEdit && (
           <button
             onClick={() => onDeleteSession(session.id)}
-            style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 16, padding: 4 }}
+            style={{ marginLeft: session.class_name ? 0 : 'auto', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 16, padding: 4 }}
             title="세션 삭제"
           >
             <i className="fas fa-times" />
@@ -492,10 +648,10 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
   const [clinicType, setClinicType] = useState(item.clinic_type ?? '');
   const [memo,       setMemo]       = useState(item.instructions ?? '');
 
-  useEffect(() => { if (!editing) setStudentId(item.student_id ?? '');  }, [item.student_id]);
-  useEffect(() => { if (!editing) setSubject(item.subject ?? '');        }, [item.subject]);
-  useEffect(() => { if (!editing) setClinicType(item.clinic_type ?? ''); }, [item.clinic_type]);
-  useEffect(() => { if (!editing) setMemo(item.instructions ?? '');      }, [item.instructions]);
+  useEffect(() => { if (!editing) setStudentId(item.student_id ?? '');  }, [item.student_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!editing) setSubject(item.subject ?? '');        }, [item.subject]);    // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!editing) setClinicType(item.clinic_type ?? ''); }, [item.clinic_type]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!editing) setMemo(item.instructions ?? '');      }, [item.instructions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const studentName = students.find(s => s.id === studentId)?.name ?? item.students?.name;
 
@@ -841,3 +997,188 @@ function whiteSelectStyle() {
     backgroundSize: '16px', minWidth: 100,
   };
 }
+
+/* ─────────────────────────────────────────────
+   반 템플릿 관리 모달
+───────────────────────────────────────────── */
+function ClassTemplateModal({ classNames, students, onClose }) {
+  const showToast = useToast();
+  const [selectedClass, setSelectedClass] = useState(classNames[0] ?? '');
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty]   = useState(false);
+
+  useEffect(() => {
+    if (!selectedClass) { setItems([]); setDirty(false); return; }
+    setLoading(true);
+    getClinicClassTemplate(selectedClass)
+      .then(rows => setItems(rows.map((r, i) => ({
+        _cid:         `loaded-${i}-${r.student_id}`,
+        student_id:   r.student_id,
+        subject:      r.subject       ?? '',
+        clinic_type:  r.clinic_type   ?? '',
+        instructions: r.instructions  ?? '',
+      }))))
+      .catch(() => setItems([]))
+      .finally(() => { setLoading(false); setDirty(false); });
+  }, [selectedClass]);
+
+  function switchClass(cn) {
+    if (cn === selectedClass) return;
+    if (dirty && !window.confirm('저장하지 않은 변경사항이 있습니다.\n다른 반으로 이동하시겠습니까? (변경사항은 사라집니다)')) return;
+    setSelectedClass(cn);
+  }
+
+  function handleClose() {
+    if (dirty && !window.confirm('저장하지 않은 변경사항이 있습니다.\n닫으시겠습니까?')) return;
+    onClose();
+  }
+
+  function addRow() {
+    setItems(prev => [...prev, { _cid: `new-${Date.now()}-${Math.random()}`, student_id: '', subject: '', clinic_type: '', instructions: '' }]);
+    setDirty(true);
+  }
+  function updateRow(idx, key, val) {
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it));
+    setDirty(true);
+  }
+  function removeRow(idx) {
+    setItems(prev => prev.filter((_, i) => i !== idx));
+    setDirty(true);
+  }
+  async function save() {
+    if (!selectedClass) return;
+    const valid = items.filter(it => it.student_id);
+    setSaving(true);
+    try {
+      await saveClinicClassTemplate(selectedClass, valid);
+      showToast(`"${selectedClass}" 템플릿 저장 (${valid.length}건)`);
+      setDirty(false);
+    } catch (e) {
+      showToast('저장 실패: ' + e.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // 해당 반에 속한 학생만 선택지로 (없으면 전체 학생)
+  const classStudents = students.filter(s => s.class_name === selectedClass);
+  const studentOptions = classStudents.length > 0 ? classStudents : students;
+
+  return (
+    <Modal
+      title={<><i className="fas fa-cog"></i> 반 템플릿 관리{dirty && <span style={{ marginLeft: 8, fontSize: 12, color: '#f59e0b' }}>● 변경됨</span>}</>}
+      onClose={handleClose}
+      width={760}
+    >
+      {classNames.length === 0 ? (
+        <p style={{ textAlign: 'center', color: '#94a3b8', padding: 40, margin: 0 }}>
+          반(class_name)이 지정된 학생이 없습니다.<br />학생 정보에서 반을 먼저 지정해주세요.
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 16, minHeight: 360 }}>
+          {/* 좌측: 반 목록 */}
+          <div style={{ borderRight: '1px solid #f1f5f9', paddingRight: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 8, letterSpacing: '0.04em' }}>반 목록</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {classNames.map(cn => (
+                <button
+                  key={cn}
+                  onClick={() => switchClass(cn)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '8px 12px',
+                    background: selectedClass === cn ? '#f3e8ff' : '#fff',
+                    color: selectedClass === cn ? '#7209b7' : '#475569',
+                    border: '1.5px solid ' + (selectedClass === cn ? '#c4b5fd' : '#e2e8f0'),
+                    borderRadius: 8,
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  {cn}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 우측: 항목 편집 */}
+          <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b' }}>
+                {selectedClass} <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 500 }}>· {items.length}건</span>
+              </span>
+              <button onClick={addRow} style={{ padding: '5px 12px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <i className="fas fa-plus" /> 행 추가
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', maxHeight: 360 }}>
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8' }}>로딩 중...</div>
+              ) : items.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 40, color: '#94a3b8', fontSize: 13 }}>
+                  저장된 템플릿이 없습니다. "행 추가"로 학생을 등록하세요.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {/* 컬럼 헤더 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 1.4fr 28px', gap: 6, fontSize: 11, color: '#94a3b8', fontWeight: 600, padding: '0 2px' }}>
+                    <span>학생</span><span>과목</span><span>클리닉</span><span>지시사항</span><span/>
+                  </div>
+                  {items.map((it, idx) => (
+                    <div key={it._cid ?? idx} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 1.4fr 28px', gap: 6, alignItems: 'center' }}>
+                      <select value={it.student_id} onChange={e => updateRow(idx, 'student_id', e.target.value)} style={tmplCell}>
+                        <option value="">학생 선택</option>
+                        {studentOptions.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}{s.class_name && s.class_name !== selectedClass ? ` (${s.class_name})` : ''}</option>
+                        ))}
+                      </select>
+                      <select value={it.subject} onChange={e => updateRow(idx, 'subject', e.target.value)} style={tmplCell}>
+                        <option value="">-</option>
+                        {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <select value={it.clinic_type} onChange={e => updateRow(idx, 'clinic_type', e.target.value)} style={tmplCell}>
+                        <option value="">-</option>
+                        {CLINIC_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <input
+                        type="text"
+                        value={it.instructions}
+                        onChange={e => updateRow(idx, 'instructions', e.target.value)}
+                        placeholder="지시사항"
+                        style={tmplCell}
+                      />
+                      <button onClick={() => removeRow(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>
+                        <i className="fas fa-times" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end', paddingTop: 14, borderTop: '1px solid #f1f5f9' }}>
+        <button onClick={handleClose} style={{ padding: '8px 18px', border: '1.5px solid #e2e8f0', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 13 }}>닫기</button>
+        {classNames.length > 0 && (
+          <button
+            onClick={save}
+            disabled={saving || !selectedClass}
+            style={{ padding: '8px 18px', background: saving ? '#cbd5e1' : '#4361ee', color: '#fff', border: 'none', borderRadius: 8, cursor: saving ? 'wait' : 'pointer', fontSize: 13, fontWeight: 600 }}
+          >
+            <i className="fas fa-save" /> {saving ? '저장 중...' : '저장'}
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+const tmplCell = {
+  width: '100%', boxSizing: 'border-box',
+  padding: '5px 8px', border: '1px solid #e2e8f0', borderRadius: 6,
+  fontSize: 13, background: '#fff', outline: 'none', fontFamily: 'inherit',
+};
