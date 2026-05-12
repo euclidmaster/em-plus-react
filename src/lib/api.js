@@ -753,24 +753,53 @@ export async function approveProfile(id) {
 
   // 학생 → students 테이블 자동 등록 (profiles에 저장된 학생 정보 활용)
   if (prof.role === 'student') {
-    const { data: existing } = await supabase
+    // 1) 이미 profile_id로 연결된 학생이 있으면 종료
+    const { data: existingByProfile } = await supabase
       .from('students').select('id').eq('profile_id', id).maybeSingle();
-    if (!existing) {
-      const { data: fullProf } = await supabase
-        .from('profiles')
-        .select('name, grade, class_name, school_name, phone')
-        .eq('id', id).single();
-      const { error: insertErr } = await supabase.from('students').insert({
-        name:        fullProf?.name       ?? prof.name,
-        grade:       fullProf?.grade      ?? null,
-        class_name:  fullProf?.class_name ?? null,
-        school_name: fullProf?.school_name ?? null,
-        phone:       fullProf?.phone      ?? null,
-        profile_id:  id,
-        status:      '재원중',
-      });
-      if (insertErr) throw new Error('students 등록 실패: ' + insertErr.message);
+    if (existingByProfile) return;
+
+    // 2) profiles에 저장된 학생 정보 조회
+    const { data: fullProf } = await supabase
+      .from('profiles')
+      .select('name, grade, class_name, school_name, phone')
+      .eq('id', id).single();
+
+    const name  = fullProf?.name ?? prof.name;
+    const grade = fullProf?.grade ?? null;
+
+    // 3) 이름+학년 기준 미연결 학생(수동 등록본) 검색 — 정확히 1명이면 연결
+    if (name) {
+      let matchQuery = supabase
+        .from('students')
+        .select('id')
+        .eq('name', name)
+        .is('profile_id', null);
+      if (grade) matchQuery = matchQuery.eq('grade', grade);
+      const { data: candidates } = await matchQuery;
+      if (candidates?.length === 1) {
+        const { error: linkErr } = await supabase
+          .from('students').update({ profile_id: id }).eq('id', candidates[0].id);
+        if (linkErr) throw new Error('students 연결 실패: ' + linkErr.message);
+        return;
+      }
+      // 2명 이상이면 모호 — 새로 등록하지 않고 운영자 수동 정리 권장 (중복 INSERT 방지)
+      if (candidates && candidates.length > 1) {
+        console.warn('[approveProfile] 동명 학생 다수 존재, 수동 연결 필요:', name, grade);
+        return;
+      }
     }
+
+    // 4) 매칭되는 학생 없음 → 새로 INSERT
+    const { error: insertErr } = await supabase.from('students').insert({
+      name,
+      grade,
+      class_name:  fullProf?.class_name  ?? null,
+      school_name: fullProf?.school_name ?? null,
+      phone:       fullProf?.phone       ?? null,
+      profile_id:  id,
+      status:      '재원중',
+    });
+    if (insertErr) throw new Error('students 등록 실패: ' + insertErr.message);
   }
 }
 export async function rejectProfile(id) {

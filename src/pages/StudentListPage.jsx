@@ -95,14 +95,30 @@ export default function StudentListPage() {
   }
 
   async function submit() {
-    if (!form.name.trim()) { showToast('이름을 입력하세요.', 'error'); return; }
+    const trimmedName = form.name.trim();
+    if (!trimmedName) { showToast('이름을 입력하세요.', 'error'); return; }
+
+    // 동명(+학년 일치) 학생 존재 시 경고 — 동명이인이 아니면 중복 등록 차단
+    const duplicates = students.filter(s =>
+      s.name === trimmedName && (s.grade ?? '') === (form.grade ?? '')
+    );
+    if (duplicates.length > 0) {
+      const info = duplicates
+        .map(d => `· ${d.name} (${d.grade ?? '학년 미지정'}, ${d.school_name ?? '학교 미지정'}, ${d.status})`)
+        .join('\n');
+      const ok = window.confirm(
+        `이미 같은 이름${form.grade ? '·학년' : ''}의 학생이 ${duplicates.length}명 있습니다:\n\n${info}\n\n동명이인이라면 [확인]을 눌러 그대로 등록하세요.\n같은 학생이라면 [취소] 후 기존 학생을 수정하세요.`
+      );
+      if (!ok) return;
+    }
+
     try {
-      const student = await createStudent({ ...form, teacher_id: form.teacher_id || null });
+      const student = await createStudent({ ...form, name: trimmedName, teacher_id: form.teacher_id || null });
       // 담당강사 선택 시 student_teachers 다대다 테이블에도 삽입 (선생님 학생 필터링 대응)
       if (form.teacher_id && student?.id) {
         await addStudentTeacher(student.id, form.teacher_id).catch(() => {});
       }
-      showToast(`${form.name} 학생이 등록되었습니다.`);
+      showToast(`${trimmedName} 학생이 등록되었습니다.`);
       setShowModal(false);
       setForm({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
       refresh();
