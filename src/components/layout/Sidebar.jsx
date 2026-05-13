@@ -92,7 +92,7 @@ const Sidebar = memo(function Sidebar({ open, onClose, collapsed, onToggleCollap
 
         <div className="sidebar-header">
           <div className="logo-area">
-            <div className="logo-icon"><img src="/logo.png" alt="EM플러스학원" /></div>
+            <div className="logo-icon"><img src="/logo-wide.png" alt="EM플러스학원" /></div>
             <div className="logo-text">
               <span className="logo-em">EM<span className="logo-plus">+</span></span>
               <span className="logo-sub">학습관리 시스템</span>
