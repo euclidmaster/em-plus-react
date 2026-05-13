@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EM+ 학습관리 시스템 — 학생 매뉴얼</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+  :root {
+    --primary: #7209b7;
+    --primary-light: #f3e8ff;
+    --primary-dark: #5b0691;
+    --accent: #4361ee;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --text: #1e293b;
+    --muted: #64748b;
+    --light: #f1f5f9;
+    --border: #e2e8f0;
+    --white: #ffffff;
+    --sidebar-width: 260px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior: smooth; }
+  body { font-family:'Noto Sans KR',sans-serif; color:var(--text); background:#f8fafc; font-size:14px; line-height:1.7; }
+
+  /* ── 사이드바 ── */
+  .sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: var(--sidebar-width);
+    background: #1e293b; color: #cbd5e1;
+    overflow-y: auto; z-index: 100;
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+  }
+  .sidebar-header { padding: 24px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); flex-shrink: 0; }
+  .sidebar-logo { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+  .sidebar-logo span { color: #c084fc; }
+  .sidebar-role { font-size: 11px; color: #94a3b8; margin-top: 4px; letter-spacing: 1px; text-transform: uppercase; }
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .sidebar-nav a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 20px; color: #94a3b8; text-decoration: none;
+    font-size: 13px; font-weight: 500; transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+  .sidebar-nav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .sidebar-nav a.active { color: #c084fc; background: rgba(192,132,252,0.1); border-left-color: #c084fc; font-weight: 700; }
+  .sidebar-nav .nav-num { width: 20px; height: 20px; border-radius: 5px; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+  .sidebar-nav a.active .nav-num { background: #7209b7; color: #fff; }
+  .sidebar-footer { padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 11px; color: #475569; }
+
+  /* ── 메인 콘텐츠 ── */
+  .main-content { margin-left: var(--sidebar-width); min-height: 100vh; }
+
+  /* ── 표지 ── */
+  .cover {
+    background: linear-gradient(135deg, #7209b7 0%, #4361ee 100%);
+    min-height: 100vh; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    color:#fff; padding:60px 40px;
+  }
+  .cover-badge { background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4); border-radius:30px; padding:6px 20px; font-size:13px; font-weight:600; letter-spacing:1px; margin-bottom:32px; display:inline-block; }
+  .cover-logo { font-size:56px; font-weight:800; letter-spacing:-1px; margin-bottom:8px; }
+  .cover-logo span { opacity:0.8; font-weight:400; }
+  .cover-subtitle { font-size:20px; opacity:0.85; margin-bottom:48px; }
+  .cover-role { font-size:42px; font-weight:800; background:rgba(255,255,255,0.15); border-radius:16px; padding:16px 48px; margin-bottom:48px; }
+  .cover-meta { font-size:13px; opacity:0.6; }
+  .cover-icon { font-size:80px; margin-bottom:24px; opacity:0.9; }
+  .cover-scroll-hint { margin-top:48px; font-size:13px; opacity:0.5; animation:bounce 2s infinite; }
+  @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(6px)} }
+
+  /* ── 컨테이너 ── */
+  .container { max-width: 800px; margin: 0 auto; padding: 60px 40px 100px; }
+
+  /* ── 섹션 ── */
+  .section { margin-bottom: 72px; scroll-margin-top: 24px; }
+  .section-header { display:flex; align-items:center; gap:14px; margin-bottom:28px; padding-bottom:16px; border-bottom:2px solid var(--primary); }
+  .section-num { background:var(--primary); color:#fff; width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:800; flex-shrink:0; }
+  .section-title { font-size:24px; font-weight:800; color:var(--text); }
+  .section-sub { font-size:13px; color:var(--muted); margin-top:3px; }
+
+  /* ── 서브 섹션 ── */
+  .subsection { margin-bottom:32px; }
+  .subsection-title { font-size:16px; font-weight:700; color:var(--primary-dark); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .subsection-title::before { content:''; width:4px; height:18px; background:var(--primary); border-radius:2px; display:inline-block; }
+
+  /* ── 스텝 ── */
+  .steps { list-style:none; }
+  .steps li { display:flex; gap:14px; margin-bottom:14px; align-items:flex-start; }
+  .step-num { background:var(--primary-light); color:var(--primary); width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; margin-top:1px; }
+  .step-text { flex:1; line-height:1.8; }
+  .step-text strong { color: var(--primary-dark); }
+
+  /* ── 박스 ── */
+  .info-box { background:var(--primary-light); border-left:4px solid var(--primary); border-radius:0 10px 10px 0; padding:14px 18px; margin:16px 0; font-size:13px; line-height:1.8; }
+  .info-box strong { color:var(--primary); }
+  .warn-box { background:#fffbeb; border-left:4px solid var(--warning); border-radius:0 10px 10px 0; padding:14px 18px; margin:16px 0; font-size:13px; line-height:1.8; }
+  .warn-box strong { color:#b45309; }
+  .tip-box { background:#f0fdf4; border-left:4px solid var(--success); border-radius:0 10px 10px 0; padding:14px 18px; margin:16px 0; font-size:13px; line-height:1.8; }
+  .tip-box strong { color:#15803d; }
+  .danger-box { background:#fef2f2; border-left:4px solid var(--danger); border-radius:0 10px 10px 0; padding:14px 18px; margin:16px 0; font-size:13px; line-height:1.8; }
+  .danger-box strong { color:#b91c1c; }
+
+  /* ── 표 ── */
+  .feature-table { width:100%; border-collapse:collapse; margin:16px 0; font-size:13px; border-radius:10px; overflow:hidden; }
+  .feature-table th { background:var(--primary); color:#fff; padding:12px 14px; text-align:left; font-weight:600; }
+  .feature-table td { padding:11px 14px; border-bottom:1px solid var(--border); vertical-align:top; line-height:1.7; }
+  .feature-table tr:nth-child(even) td { background:var(--light); }
+  .feature-table tr:last-child td { border-bottom:none; }
+
+  /* ── 배지 ── */
+  .badge { display:inline-block; padding:2px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+  .badge-purple { background:var(--primary-light); color:var(--primary); }
+  .badge-green { background:#dcfce7; color:#15803d; }
+  .badge-red { background:#fee2e2; color:#b91c1c; }
+  .badge-yellow { background:#fef3c7; color:#b45309; }
+
+  /* ── 메뉴 카드 ── */
+  .menu-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; margin:20px 0; }
+  .menu-card { background:#fff; border:1px solid var(--border); border-radius:12px; padding:16px; display:flex; align-items:flex-start; gap:12px; transition: box-shadow 0.2s, transform 0.2s; cursor: default; }
+  .menu-card:hover { box-shadow: 0 4px 16px rgba(114,9,183,0.12); transform: translateY(-2px); }
+  .menu-card-icon { width:40px; height:40px; background:var(--primary-light); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; color:var(--primary); flex-shrink:0; }
+  .menu-card-body strong { font-size:14px; font-weight:700; display:block; margin-bottom:4px; }
+  .menu-card-body span { font-size:12px; color:var(--muted); line-height:1.6; }
+
+  /* ── 강조 숫자 ── */
+  .highlight-num { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; background:var(--primary); color:#fff; border-radius:50%; font-weight:800; font-size:14px; margin-right:4px; }
+
+  /* ── 모바일 토글 ── */
+  .sidebar-toggle { display: none; position: fixed; top:16px; left:16px; z-index:200; background: var(--primary); color:#fff; border:none; border-radius:8px; width:40px; height:40px; font-size:18px; cursor:pointer; align-items:center; justify-content:center; }
+
+  @media (max-width: 900px) {
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); }
+    .main-content { margin-left: 0; }
+    .sidebar-toggle { display: flex; }
+    .container { padding: 40px 20px 80px; }
+    .menu-grid { grid-template-columns:1fr; }
+  }
+  @media print {
+    .sidebar, .sidebar-toggle { display:none !important; }
+    .main-content { margin-left:0; }
+    .cover { min-height:100vh; page-break-after:always; }
+    .section { page-break-inside:avoid; }
+    a { text-decoration:none; color:inherit; }
+  }
+</style>
+</head>
+<body>
+
+<button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="메뉴">☰</button>
+
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">EM<span>+</span></div>
+    <div class="sidebar-role">학생 매뉴얼</div>
+  </div>
+  <div class="sidebar-nav">
+    <a href="#cover"><span class="nav-num">🏠</span> 표지</a>
+    <a href="#sec1"><span class="nav-num">1</span> 로그인 및 첫 화면</a>
+    <a href="#sec2"><span class="nav-num">2</span> 홈 화면 구성</a>
+    <a href="#sec3"><span class="nav-num">3</span> 주간 학습 플랜 확인</a>
+    <a href="#sec4"><span class="nav-num">4</span> 숙제 확인 및 체크</a>
+    <a href="#sec5"><span class="nav-num">5</span> 내 성적 조회</a>
+    <a href="#sec6"><span class="nav-num">6</span> 출결 확인</a>
+    <a href="#sec7"><span class="nav-num">7</span> 선생님과 소통</a>
+    <a href="#sec8"><span class="nav-num">8</span> 자주 묻는 질문</a>
+  </div>
+  <div class="sidebar-footer">EM+ 학습관리 시스템 v1.0<br>© 2025 EM+학원</div>
+</nav>
+
+<div class="main-content">
+
+<!-- 표지 -->
+<div class="cover" id="cover">
+  <div class="cover-badge">사용자 매뉴얼 v1.0</div>
+  <div class="cover-icon">🎒</div>
+  <div class="cover-logo">EM<span>+</span> 학습관리 시스템</div>
+  <div class="cover-subtitle">학생 전용 이용 가이드</div>
+  <div class="cover-role">📘 학생 매뉴얼</div>
+  <div class="cover-meta">발행일: 2025년 4월 &nbsp;|&nbsp; EM+학원</div>
+  <div class="cover-scroll-hint">▼ 스크롤하여 시작</div>
+</div>
+
+<div class="container">
+
+<!-- 1. 로그인 -->
+<div class="section" id="sec1">
+  <div class="section-header">
+    <div class="section-num">1</div>
+    <div>
+      <div class="section-title">로그인 및 첫 화면</div>
+      <div class="section-sub">EM+ 시스템에 처음 접속하는 방법</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">접속 주소</div>
+    <div class="info-box">
+      <strong>🌐 접속 URL:</strong> https://em-plus-react.vercel.app<br>
+      스마트폰, 태블릿, PC 어디서든 브라우저로 접속할 수 있습니다. 앱 설치가 필요 없어요!
+    </div>
+    <div class="tip-box"><strong>💡 팁:</strong> 스마트폰에서 사파리(iOS) 또는 크롬(Android)으로 접속한 뒤 <strong>"홈 화면에 추가"</strong>를 선택하면 앱처럼 바로가기를 만들 수 있어요.</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">회원가입 방법</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">접속 주소로 이동 → 로그인 화면 하단 <strong>"회원가입"</strong>을 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">이메일 주소, 비밀번호, 이름을 입력하고 <strong>가입</strong> 버튼을 클릭합니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">가입 후 원장님 또는 선생님이 계정을 <strong>승인</strong>해야 시스템을 이용할 수 있습니다.</span></li>
+      <li><span class="step-num">4</span><span class="step-text">승인이 완료되면 로그인 후 모든 메뉴를 이용할 수 있습니다.</span></li>
+    </ul>
+    <div class="warn-box"><strong>⚠ 주의:</strong> 가입 후 승인 전까지는 화면이 비어 있거나 "승인 대기 중" 메시지가 표시됩니다. 선생님께 승인을 요청하세요.</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">로그인 방법</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">접속 주소로 이동하면 로그인 화면이 나타납니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">가입할 때 사용한 <strong>이메일</strong>과 <strong>비밀번호</strong>를 입력합니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text"><strong>로그인</strong> 버튼을 클릭하면 내 학습 대시보드로 이동합니다.</span></li>
+    </ul>
+    <div class="tip-box"><strong>💡 비밀번호를 잊었다면:</strong> 로그인 화면 하단 <strong>"비밀번호 찾기"</strong>를 클릭하면 가입 이메일로 재설정 링크가 전송됩니다.</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">학생이 볼 수 있는 정보</div>
+    <table class="feature-table">
+      <tr><th>메뉴</th><th>내용</th><th>수정 가능 여부</th></tr>
+      <tr><td>주간 플랜</td><td>선생님이 작성한 내 주간 학습 계획</td><td>체크만 가능</td></tr>
+      <tr><td>숙제</td><td>오늘/이번 주 숙제 목록 및 완료 체크</td><td>완료 체크 가능</td></tr>
+      <tr><td>성적</td><td>과목별 시험 점수 및 추이 차트</td><td>조회만</td></tr>
+      <tr><td>출결</td><td>내 월별 출석·결석·지각 현황</td><td>조회만</td></tr>
+      <tr><td>소통</td><td>선생님과 1:1 메시지</td><td>메시지 발송 가능</td></tr>
+      <tr><td>수행평가</td><td>선생님이 입력한 수행 점수 및 피드백</td><td>조회만</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 2. 홈 화면 -->
+<div class="section" id="sec2">
+  <div class="section-header">
+    <div class="section-num">2</div>
+    <div>
+      <div class="section-title">홈 화면 구성</div>
+      <div class="section-sub">로그인 후 보이는 내 학습 대시보드 안내</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">대시보드 주요 구성</div>
+    <p style="line-height:1.9; color:#334155; margin-bottom:14px;">
+      로그인하면 내 학습 현황을 한눈에 볼 수 있는 대시보드가 나타납니다.
+    </p>
+    <div class="menu-grid">
+      <div class="menu-card">
+        <div class="menu-card-icon">📅</div>
+        <div class="menu-card-body"><strong>오늘의 학습 요약</strong><span>오늘 해야 할 숙제 수, 플랜 완료율이 한눈에 표시됩니다</span></div>
+      </div>
+      <div class="menu-card">
+        <div class="menu-card-icon">✅</div>
+        <div class="menu-card-body"><strong>숙제 완료 현황</strong><span>완료한 숙제와 미완료 숙제를 빠르게 확인할 수 있습니다</span></div>
+      </div>
+      <div class="menu-card">
+        <div class="menu-card-icon">📊</div>
+        <div class="menu-card-body"><strong>최근 성적</strong><span>가장 최근에 등록된 시험 점수가 과목별로 표시됩니다</span></div>
+      </div>
+      <div class="menu-card">
+        <div class="menu-card-icon">💬</div>
+        <div class="menu-card-body"><strong>새 메시지</strong><span>선생님으로부터 받은 읽지 않은 메시지가 배지로 표시됩니다</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">좌측 메뉴 구성</div>
+    <ul class="steps">
+      <li><span class="step-num">🏠</span><span class="step-text"><strong>홈</strong> — 내 학습 대시보드 메인</span></li>
+      <li><span class="step-num">📋</span><span class="step-text"><strong>주간 플랜</strong> — 이번 주 학습 계획 확인</span></li>
+      <li><span class="step-num">📝</span><span class="step-text"><strong>숙제</strong> — 오늘·이번 주 숙제 목록 및 완료 체크</span></li>
+      <li><span class="step-num">📊</span><span class="step-text"><strong>성적</strong> — 과목별 시험 점수 및 차트</span></li>
+      <li><span class="step-num">📆</span><span class="step-text"><strong>출결</strong> — 내 출석·결석 현황</span></li>
+      <li><span class="step-num">💬</span><span class="step-text"><strong>소통</strong> — 선생님과 메시지</span></li>
+    </ul>
+    <div class="tip-box"><strong>💡 팁:</strong> 화면 상단에 현재 위치가 표시되어 지금 어느 메뉴에 있는지 항상 확인할 수 있습니다.</div>
+  </div>
+</div>
+
+<!-- 3. 주간 플랜 -->
+<div class="section" id="sec3">
+  <div class="section-header">
+    <div class="section-num">3</div>
+    <div>
+      <div class="section-title">주간 학습 플랜 확인</div>
+      <div class="section-sub">선생님이 작성한 이번 주 학습 계획 보기</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">주간 플랜이란?</div>
+    <p style="line-height:1.9; color:#334155; margin-bottom:14px;">
+      주간 플랜은 선생님이 나를 위해 만든 <strong>이번 주 학습 계획표</strong>입니다.
+      요일별로 어떤 과목을, 어떤 내용을, 얼마나 공부해야 하는지 안내해줍니다.
+      플랜을 보면서 오늘 해야 할 공부를 확인하고, 완료하면 체크해보세요!
+    </p>
+    <div class="info-box"><strong>📌 알아두세요:</strong> 플랜의 내용은 선생님만 작성할 수 있습니다. 내가 수정할 수 없지만, 완료 체크는 내가 직접 할 수 있어요.</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">주간 플랜 보는 방법</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">좌측 메뉴에서 <strong>주간 플랜</strong>을 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">이번 주 월요일~일요일의 학습 계획이 요일별 카드로 나타납니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">오늘 날짜 카드는 <strong>강조 표시</strong>되어 쉽게 찾을 수 있습니다.</span></li>
+      <li><span class="step-num">4</span><span class="step-text">각 항목에는 과목, 학습 내용, 예상 시간이 표시됩니다.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">완료 체크하기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">공부를 마친 항목 왼쪽의 <strong>○ 체크박스</strong>를 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">체크하면 항목이 <strong>완료 색상(회색/취소선)</strong>으로 바뀝니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">상단의 <strong>완료율 바</strong>가 올라가는 것을 확인할 수 있습니다.</span></li>
+      <li><span class="step-num">4</span><span class="step-text">잘못 체크했으면 다시 클릭하면 해제됩니다.</span></li>
+    </ul>
+    <div class="tip-box"><strong>💡 팁:</strong> 매일 플랜을 확인하고 완료 체크를 하면 선생님도 내 학습 진행 상황을 바로 알 수 있어요. 열심히 하는 모습을 보여주세요! 💪</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">지난 주 / 다음 주 보기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">화면 상단 날짜 옆의 <strong>← →</strong> 화살표를 클릭하면 다른 주를 볼 수 있습니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">지난 주 플랜과 완료 기록도 그대로 남아 있습니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text"><strong>오늘</strong> 버튼을 클릭하면 이번 주로 돌아옵니다.</span></li>
+    </ul>
+  </div>
+</div>
+
+<!-- 4. 숙제 -->
+<div class="section" id="sec4">
+  <div class="section-header">
+    <div class="section-num">4</div>
+    <div>
+      <div class="section-title">숙제 확인 및 체크</div>
+      <div class="section-sub">선생님이 등록한 숙제 목록 확인 및 완료 처리</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">숙제 목록 보기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">좌측 메뉴에서 <strong>숙제</strong>를 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">오늘 날짜 기준의 숙제 목록이 나타납니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">각 숙제에는 <strong>과목, 내용, 마감일</strong>이 표시됩니다.</span></li>
+      <li><span class="step-num">4</span><span class="step-text">날짜 화살표를 클릭해 다른 날의 숙제도 볼 수 있습니다.</span></li>
+    </ul>
+    <div class="info-box"><strong>📌 참고:</strong> 숙제는 선생님이 등록합니다. 숙제 내용이 없거나 궁금한 점이 있으면 선생님에게 메시지로 문의하세요.</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">숙제 완료 체크</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">숙제를 마친 후 해당 항목 왼쪽의 <strong>체크박스</strong>를 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">완료된 숙제는 목록 하단으로 이동하며 <strong>취소선</strong>이 그어집니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">선생님도 내 완료 체크를 실시간으로 확인할 수 있습니다.</span></li>
+    </ul>
+    <div class="warn-box"><strong>⚠ 주의:</strong> 숙제를 완료 체크한다고 해서 자동으로 제출되는 것은 아닙니다. 실제 숙제물은 수업 시간에 선생님에게 직접 제출해야 해요.</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">미완료 숙제 확인</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">숙제 목록 상단에 <strong>미완료 항목</strong>이 먼저 표시됩니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">마감일이 지난 미완료 숙제는 <strong>빨간색</strong>으로 강조 표시됩니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">홈 화면에서도 오늘 기준 미완료 숙제 수를 바로 확인할 수 있습니다.</span></li>
+    </ul>
+    <div class="tip-box"><strong>💡 팁:</strong> 숙제를 마치면 바로 체크하는 습관을 만들어 보세요. 선생님이 내 노력을 더 잘 알 수 있습니다!</div>
+  </div>
+</div>
+
+<!-- 5. 성적 -->
+<div class="section" id="sec5">
+  <div class="section-header">
+    <div class="section-num">5</div>
+    <div>
+      <div class="section-title">내 성적 조회</div>
+      <div class="section-sub">과목별 시험 점수 및 성적 변화 추이 확인</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">성적 화면 열기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">좌측 메뉴에서 <strong>성적</strong>을 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">선생님이 입력한 내 시험 점수 목록이 나타납니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">상단 탭에서 <strong>과목</strong>을 선택하면 해당 과목만 필터됩니다.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">성적 차트 보기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">성적 목록 상단의 <strong>차트 보기</strong> 버튼을 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">시간 순서대로 점수 변화를 보여주는 <strong>꺾은선 그래프</strong>가 나타납니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">여러 과목을 함께 표시하거나 특정 과목만 선택해서 볼 수 있습니다.</span></li>
+      <li><span class="step-num">4</span><span class="step-text">차트 상단에서 <strong>기간 필터</strong>(전체 / 최근 6개월 / 최근 1년)를 변경할 수 있습니다.</span></li>
+    </ul>
+    <div class="tip-box"><strong>💡 팁:</strong> 성적 차트를 통해 어떤 과목이 오르고 있는지, 어디가 약한지 스스로 파악할 수 있어요. 선생님과 상담 전에 미리 확인해보세요!</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">성적 목록 상세 정보</div>
+    <table class="feature-table">
+      <tr><th>항목</th><th>내용</th></tr>
+      <tr><td>과목</td><td>국어, 수학, 영어 등 시험 과목</td></tr>
+      <tr><td>시험 유형</td><td>중간고사, 기말고사, 모의고사, 단원 평가 등</td></tr>
+      <tr><td>날짜</td><td>시험 또는 성적 입력 날짜</td></tr>
+      <tr><td>점수</td><td>100점 만점 기준 점수</td></tr>
+      <tr><td>메모</td><td>선생님이 남긴 피드백 (있는 경우)</td></tr>
+    </table>
+    <div class="info-box"><strong>📌 참고:</strong> 성적 입력과 수정은 선생님만 할 수 있습니다. 점수가 잘못 입력된 것 같으면 선생님에게 확인을 요청하세요.</div>
+  </div>
+</div>
+
+<!-- 6. 출결 -->
+<div class="section" id="sec6">
+  <div class="section-header">
+    <div class="section-num">6</div>
+    <div>
+      <div class="section-title">출결 확인</div>
+      <div class="section-sub">내 출석·결석·지각 현황 조회</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">출결 현황 보기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">좌측 메뉴에서 <strong>출결</strong>을 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">이번 달 내 출결 현황이 달력 형태로 표시됩니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">각 날짜에 <span class="badge badge-green">출석</span> <span class="badge badge-red">결석</span> <span class="badge badge-yellow">지각</span> 상태가 색상으로 표시됩니다.</span></li>
+      <li><span class="step-num">4</span><span class="step-text">상단 화살표로 이전 달 출결도 확인할 수 있습니다.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">월별 집계 확인</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">달력 아래쪽에 이번 달 <strong>출석 일수, 결석 일수, 지각 횟수</strong>가 요약됩니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">출석률(%)도 함께 표시됩니다.</span></li>
+    </ul>
+    <div class="warn-box"><strong>⚠ 출결 기록이 잘못된 경우:</strong> 출결 수정은 선생님 또는 원장님만 가능합니다. 결석이 아닌데 결석으로 표시되어 있다면 선생님에게 수정을 요청하세요.</div>
+    <div class="info-box"><strong>📌 참고:</strong> 출결 데이터는 수업료 환불 기준이 될 수 있으므로 정확히 기록하는 것이 중요합니다.</div>
+  </div>
+</div>
+
+<!-- 7. 소통 -->
+<div class="section" id="sec7">
+  <div class="section-header">
+    <div class="section-num">7</div>
+    <div>
+      <div class="section-title">선생님과 소통</div>
+      <div class="section-sub">선생님에게 질문하거나 메시지 주고받기</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">메시지 보내기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">좌측 메뉴에서 <strong>소통</strong>을 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">내 담당 선생님이 목록에 표시됩니다. 선생님 이름을 클릭합니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">대화 화면이 열립니다. 하단 입력창에 메시지를 입력합니다.</span></li>
+      <li><span class="step-num">4</span><span class="step-text"><strong>전송(→)</strong> 버튼을 클릭하거나 Enter를 누르면 메시지가 전송됩니다.</span></li>
+    </ul>
+    <div class="tip-box"><strong>💡 활용 예시:</strong><br>
+      📌 "선생님, 오늘 수학 숙제 3번 문제가 이해가 안 돼요. 내일 설명해 주실 수 있나요?"<br>
+      📌 "오늘 몸이 좋지 않아 결석할 것 같아요."<br>
+      📌 "이번 주 클리닉 일정을 확인하고 싶어요."
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">파일 첨부 보내기</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">대화 입력창 왼쪽의 <strong>📎 클립 아이콘</strong>을 클릭합니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">전송할 파일(사진, PDF, 문서 등)을 선택합니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">파일이 첨부되면 <strong>전송</strong>을 클릭합니다.</span></li>
+    </ul>
+    <div class="tip-box"><strong>💡 팁:</strong> 숙제나 필기 노트 사진을 찍어서 선생님에게 보내면 피드백을 받을 수 있어요!</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">새 메시지 알림 확인</div>
+    <ul class="steps">
+      <li><span class="step-num">1</span><span class="step-text">선생님에게 새 메시지가 오면 화면 상단에 <strong>알림 배너</strong>가 나타납니다.</span></li>
+      <li><span class="step-num">2</span><span class="step-text">배너를 클릭하면 해당 대화방으로 바로 이동합니다.</span></li>
+      <li><span class="step-num">3</span><span class="step-text">소통 메뉴의 대화 목록에서도 읽지 않은 메시지가 <strong>굵은 글씨</strong>로 표시됩니다.</span></li>
+    </ul>
+    <div class="info-box"><strong>📌 참고:</strong> 메시지는 담당 선생님과 1:1로 진행됩니다. 원장님도 메시지를 열람할 수 있으므로 올바른 언어를 사용해 주세요.</div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">메시지 에티켓</div>
+    <table class="feature-table">
+      <tr><th>상황</th><th>권장 행동</th></tr>
+      <tr><td>질문이 있을 때</td><td>구체적으로 어떤 부분인지 명확히 작성 (예: "수학 교재 45쪽 3번 문제")</td></tr>
+      <tr><td>결석/지각 예고</td><td>가능한 한 수업 전날 또는 당일 오전에 미리 연락</td></tr>
+      <tr><td>숙제 관련</td><td>사진을 찍어 전송하거나, 어떤 부분이 어려운지 설명</td></tr>
+      <tr><td>답장이 늦을 때</td><td>선생님도 수업 중일 수 있으니 기다려 주세요</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- 8. FAQ -->
+<div class="section" id="sec8">
+  <div class="section-header">
+    <div class="section-num">8</div>
+    <div>
+      <div class="section-title">자주 묻는 질문 (FAQ)</div>
+      <div class="section-sub">EM+ 이용 중 자주 발생하는 문제와 해결 방법</div>
+    </div>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">Q. 로그인이 안 돼요</div>
+    <ul class="steps">
+      <li><span class="step-num">→</span><span class="step-text">이메일 주소와 비밀번호를 다시 확인해 주세요. 대소문자, 띄어쓰기에 주의하세요.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">비밀번호를 잊었다면 로그인 화면 하단 <strong>"비밀번호 찾기"</strong>를 이용하세요.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">계속 안 된다면 선생님 또는 원장님에게 계정 확인을 요청하세요.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">Q. 로그인은 되는데 화면이 비어 있어요</div>
+    <ul class="steps">
+      <li><span class="step-num">→</span><span class="step-text">계정이 아직 승인되지 않은 상태입니다. 선생님 또는 원장님에게 <strong>계정 승인</strong>을 요청하세요.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">승인 후 다시 로그인하면 정상적으로 메뉴가 표시됩니다.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">Q. 내 성적이나 숙제가 안 보여요</div>
+    <ul class="steps">
+      <li><span class="step-num">→</span><span class="step-text">선생님이 아직 입력하지 않은 경우입니다. 선생님에게 문의하거나 잠시 기다려 주세요.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">날짜 필터가 잘못 설정된 경우도 있습니다. 날짜를 다시 확인해 보세요.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">Q. 출결 기록이 잘못된 것 같아요</div>
+    <ul class="steps">
+      <li><span class="step-num">→</span><span class="step-text">출결 수정은 선생님 또는 원장님만 가능합니다.</span></li>
+      <li><span class="step-num">→</span><span class="step-text"><strong>소통 메뉴</strong>에서 선생님에게 날짜와 함께 수정 요청 메시지를 보내주세요.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">Q. 스마트폰에서 화면이 이상해요</div>
+    <ul class="steps">
+      <li><span class="step-num">→</span><span class="step-text">Chrome 또는 Safari 최신 버전을 사용하는지 확인해 주세요.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">브라우저를 완전히 종료한 후 다시 열어 접속해 보세요.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">계속 문제가 있으면 선생님에게 알려주세요.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">Q. 선생님에게 보낸 메시지가 전달이 안 된 것 같아요</div>
+    <ul class="steps">
+      <li><span class="step-num">→</span><span class="step-text">대화 목록에 내가 보낸 메시지가 표시되면 정상 전송된 것입니다.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">선생님이 수업 중일 경우 답장이 늦을 수 있습니다. 잠시 기다려 주세요.</span></li>
+      <li><span class="step-num">→</span><span class="step-text">급한 연락은 전화 또는 문자를 이용하세요.</span></li>
+    </ul>
+  </div>
+
+  <div class="subsection">
+    <div class="subsection-title">도움이 필요할 때</div>
+    <div class="info-box">
+      <strong>📞 문의 방법</strong><br>
+      시스템 이용 중 해결이 안 되는 문제는 담당 선생님 또는 원장님에게 문의하세요.<br>
+      EM+ 소통 메뉴 → 선생님에게 메시지를 보내는 것이 가장 빠릅니다.
+    </div>
+  </div>
+</div>
+
+</div><!-- /container -->
+</div><!-- /main-content -->
+
+<script>
+function updateActiveNav() {
+  const sections = document.querySelectorAll('[id^="sec"], #cover');
+  const navLinks = document.querySelectorAll('.sidebar-nav a');
+  let current = 'cover';
+  sections.forEach(sec => {
+    if (sec.getBoundingClientRect().top <= 80) current = sec.id;
+  });
+  navLinks.forEach(link => {
+    link.classList.toggle('active', link.getAttribute('href') === '#' + current);
+  });
+}
+window.addEventListener('scroll', updateActiveNav, { passive: true });
+updateActiveNav();
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+document.querySelector('.main-content').addEventListener('click', () => {
+  document.getElementById('sidebar').classList.remove('open');
+});
+</script>
+
+</body>
+</html>

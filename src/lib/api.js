@@ -255,6 +255,107 @@ export async function bulkCreateHomework(studentIds, payload) {
   return data;
 }
 
+// ==================== 반 (classes) ====================
+// 필요한 Supabase SQL은 docs/ 또는 별도 마이그레이션 참고:
+// - classes (id, name, description, day_of_week, start_time, teacher_id, subject, grade, created_by, created_at)
+// - student_classes (id, student_id, class_id, created_at) — 다대다
+// RLS:
+//   classes: admin 전권 + teacher는 자기 담당반(teacher_id) UPDATE/DELETE,
+//            본인이 생성자(created_by)이거나 admin이면 INSERT
+//   student_classes: 인증된 사용자 모두
+export async function getClasses() {
+  const { data, error } = await supabase
+    .from('classes')
+    .select('*, teachers(id, name), student_classes(count)')
+    .order('name');
+  if (error) throw error;
+  // student_classes(count) 는 [{ count: N }] 형태 — student_count로 평탄화
+  return (data ?? []).map(c => ({
+    ...c,
+    student_count: c.student_classes?.[0]?.count ?? 0,
+  }));
+}
+export async function createClass(payload) {
+  const { data, error } = await supabase
+    .from('classes')
+    .insert(payload)
+    .select('*, teachers(id, name)')
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function updateClass(id, payload) {
+  const { data, error } = await supabase
+    .from('classes')
+    .update(payload)
+    .eq('id', id)
+    .select('*, teachers(id, name)')
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteClass(id) {
+  const { error } = await supabase.from('classes').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// 학생 ↔ 반 연결 (다대다)
+export async function getStudentClasses(studentId) {
+  // 한 학생이 속한 반들
+  const { data, error } = await supabase
+    .from('student_classes')
+    .select('id, class_id, classes(id, name, day_of_week, subject, grade, teachers(id, name))')
+    .eq('student_id', studentId);
+  if (error) throw error;
+  return data ?? [];
+}
+export async function getClassStudents(classId) {
+  // 한 반에 속한 학생들
+  const { data, error } = await supabase
+    .from('student_classes')
+    .select('id, student_id, students(id, name, grade, class_name, status, phone)')
+    .eq('class_id', classId);
+  if (error) throw error;
+  return data ?? [];
+}
+export async function addStudentToClass(studentId, classId) {
+  const { data, error } = await supabase
+    .from('student_classes')
+    .insert({ student_id: studentId, class_id: classId })
+    .select('id, class_id, classes(id, name, day_of_week, subject, grade, teachers(id, name))')
+    .single();
+  if (error) throw error;
+  return data;
+}
+export async function removeStudentFromClass(linkId) {
+  const { error } = await supabase.from('student_classes').delete().eq('id', linkId);
+  if (error) throw error;
+}
+export async function setStudentClasses(studentId, classIds) {
+  // 학생의 반 소속을 주어진 classIds 집합으로 동기화 (다중 선택 UI 저장 시 사용)
+  // 기존: getStudentClasses → 추가/삭제 diff
+  const current = await getStudentClasses(studentId);
+  const currentIds = new Set(current.map(c => c.class_id));
+  const next = new Set(classIds);
+
+  const toAdd    = [...next].filter(id => !currentIds.has(id));
+  const toRemove = current.filter(c => !next.has(c.class_id));
+
+  if (toRemove.length > 0) {
+    const { error } = await supabase
+      .from('student_classes')
+      .delete()
+      .in('id', toRemove.map(r => r.id));
+    if (error) throw error;
+  }
+  if (toAdd.length > 0) {
+    const rows = toAdd.map(class_id => ({ student_id: studentId, class_id }));
+    const { error } = await supabase.from('student_classes').insert(rows);
+    if (error) throw error;
+  }
+  return getStudentClasses(studentId);
+}
+
 // ==================== 선생님 역할: 담당 학생 조회 ====================
 export async function getTeacherByProfileId(profileId) {
   const { data } = await supabase

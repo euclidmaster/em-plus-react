@@ -35,8 +35,7 @@ export default function ClinicPage() {
   const today = todayLocal();
   const [date, setDate]               = useState(today);
   const isFuture = date > today;
-  const isPast   = date < today;
-  const canEdit = isAdmin || !isPast;
+  const canEdit = true;
   const [sessions, setSessions]       = useState([]);
   const [teachers, setTeachers]       = useState([]);
   const [students, setStudents]       = useState([]);
@@ -295,12 +294,7 @@ export default function ClinicPage() {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {!canEdit && (
-            <span style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <i className="fas fa-lock" /> 지난 날짜 — {isAdmin ? '' : '원장만 수정 가능'}
-            </span>
-          )}
-          {canEdit && isFuture && (
+          {isFuture && (
             <span style={{ fontSize: 12, color: '#4361ee', display: 'flex', alignItems: 'center', gap: 4 }}>
               <i className="fas fa-calendar-alt" /> 미리 입력 중
             </span>

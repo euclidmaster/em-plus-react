@@ -25,6 +25,7 @@ const ADMIN_NAV = [
   { group: '운영 관리', icon: 'fa-cog', items: [
     { to: '/board',         icon: 'fa-bullhorn',          label: '학원 게시판' },
     { to: '/attendance',    icon: 'fa-user-check',        label: '출석 관리' },
+    { to: '/classes',       icon: 'fa-users-rectangle',   label: '반 관리' },
     { to: '/teachers',      icon: 'fa-chalkboard-teacher',label: '선생님 관리', adminOnly: true },
     { to: '/messages',      icon: 'fa-comments',          label: '대화 열람',     adminOnly: true },
   ]},

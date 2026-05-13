@@ -18,6 +18,7 @@ const BREADCRUMB = {
   '/messages':     '전체 대화 열람',
   '/board':        '학원 게시판',
   '/attendance':   '출석 관리',
+  '/classes':      '반 관리',
   '/teachers':     '선생님 관리',
   '/approval':     '계정 승인',
   '/profile':      '내 계정 정보',
