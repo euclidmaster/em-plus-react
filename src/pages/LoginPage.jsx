@@ -95,16 +95,11 @@ export default function LoginPage() {
       }}>
         {/* 로고 */}
         <div style={{ textAlign:'center', marginBottom:32 }}>
-          <div style={{
-            width:60, height:60, background:'linear-gradient(135deg,#667eea,#764ba2)',
-            borderRadius:16, display:'inline-flex', alignItems:'center', justifyContent:'center',
-            fontSize:26, color:'#fff', marginBottom:12
-          }}>
-            <i className="fas fa-graduation-cap"></i>
-          </div>
-          <h1 style={{ fontSize:22, fontWeight:700, color:'#1e293b' }}>
-            EM<span style={{ color:'#667eea' }}>+</span>학원
-          </h1>
+          <img
+            src="/logo.png"
+            alt="EM플러스학원"
+            style={{ width:180, height:180, objectFit:'contain', display:'block', margin:'0 auto' }}
+          />
           <p style={{ fontSize:13, color:'#94a3b8', marginTop:4 }}>학습관리 시스템</p>
         </div>
 
