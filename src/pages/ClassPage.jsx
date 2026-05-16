@@ -20,6 +20,14 @@ const SORT_OPTIONS = [
   { value: 'recent',   label: '최근 생성순' },
 ];
 
+const VIEW_MODES = [
+  { value: 'card',   icon: 'fa-th-large', label: '카드',   title: '카드 보기 — 시각적 카드 그리드' },
+  { value: 'list',   icon: 'fa-list',     label: '목록',   title: '목록 보기 — 한 줄에 모든 정보, 정렬 가능' },
+  { value: 'folder', icon: 'fa-folder',   label: '폴더',   title: '폴더 보기 — 학년/강사별 그룹, 접기·펼치기' },
+];
+const VIEW_MODE_KEY = 'classPage:viewMode';
+const FOLDER_GROUPBY_KEY = 'classPage:folderGroupBy';
+
 const EMPTY_FORM = {
   name: '', description: '', day_of_week: '',
   start_time: '', teacher_id: '', subject: '', grade: '',
@@ -50,6 +58,28 @@ export default function ClassPage() {
   const [sortBy,  setSortBy]          = useState('name');
   const [gradeFilter,   setGradeFilter]   = useState('');
   const [teacherFilter, setTeacherFilter] = useState('');
+
+  // 뷰 모드 (localStorage 영속화)
+  const [viewMode, setViewMode] = useState(() => {
+    try { return localStorage.getItem(VIEW_MODE_KEY) || 'card'; }
+    catch { return 'card'; }
+  });
+  const [folderGroupBy, setFolderGroupBy] = useState(() => {
+    try { return localStorage.getItem(FOLDER_GROUPBY_KEY) || 'grade'; }
+    catch { return 'grade'; }
+  });
+  useEffect(() => { try { localStorage.setItem(VIEW_MODE_KEY, viewMode); } catch { /* ignore */ } }, [viewMode]);
+  useEffect(() => { try { localStorage.setItem(FOLDER_GROUPBY_KEY, folderGroupBy); } catch { /* ignore */ } }, [folderGroupBy]);
+
+  // 폴더 모드: 그룹별 펼침/접힘 (기본은 전부 펼침)
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set());
+  function toggleGroup(key) {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -224,6 +254,39 @@ export default function ClassPage() {
               초기화
             </button>
           )}
+
+          {/* 뷰 모드 토글 */}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 0, border: '1.5px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+            {VIEW_MODES.map(m => (
+              <button
+                key={m.value}
+                onClick={() => setViewMode(m.value)}
+                title={m.title}
+                style={{
+                  padding: '7px 12px',
+                  background: viewMode === m.value ? '#4361ee' : '#fff',
+                  color: viewMode === m.value ? '#fff' : '#64748b',
+                  border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  borderRight: '1px solid #e2e8f0',
+                }}
+              >
+                <i className={`fas ${m.icon}`} /> {m.label}
+              </button>
+            ))}
+          </div>
+          {viewMode === 'folder' && (
+            <select
+              value={folderGroupBy}
+              onChange={e => setFolderGroupBy(e.target.value)}
+              style={{ padding: '8px 10px', border: '1.5px solid #e2e8f0', borderRadius: 8, fontSize: 12, background: '#fff', cursor: 'pointer' }}
+              title="폴더 그룹 기준"
+            >
+              <option value="grade">학년별</option>
+              <option value="teacher">강사별</option>
+            </select>
+          )}
         </div>
       </div>
 
@@ -250,6 +313,25 @@ export default function ClassPage() {
           <i className="fas fa-filter" style={{ fontSize: 24, marginBottom: 8, display: 'block', opacity: 0.4 }} />
           조건에 맞는 반이 없습니다.
         </div>
+      ) : viewMode === 'list' ? (
+        <ClassListView
+          items={filtered}
+          canModifyFn={canModify}
+          onEdit={openEdit}
+          onDelete={remove}
+          onManageStudents={setStudentMgrFor}
+        />
+      ) : viewMode === 'folder' ? (
+        <ClassFolderView
+          items={filtered}
+          groupBy={folderGroupBy}
+          collapsedGroups={collapsedGroups}
+          onToggleGroup={toggleGroup}
+          canModifyFn={canModify}
+          onEdit={openEdit}
+          onDelete={remove}
+          onManageStudents={setStudentMgrFor}
+        />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
           {filtered.map(cls => (
@@ -608,6 +690,214 @@ function StudentManageModal({ cls, allStudents, onClose }) {
         <button onClick={onClose} style={btnCancel}>닫기</button>
       </div>
     </Modal>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   목록(테이블) 뷰
+───────────────────────────────────────────── */
+function ClassListView({ items, canModifyFn, onEdit, onDelete, onManageStudents }) {
+  return (
+    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #e2e8f0' }}>
+              <th style={thStyle}>반 이름</th>
+              <th style={thStyle}>학년</th>
+              <th style={thStyle}>과목</th>
+              <th style={thStyle}>담당 강사</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}>학생수</th>
+              <th style={thStyle}>요일</th>
+              <th style={thStyle}>시작</th>
+              <th style={thStyle}>설명</th>
+              <th style={{ ...thStyle, textAlign: 'right' }}>관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(cls => {
+              const can = canModifyFn(cls);
+              return (
+                <tr key={cls.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ ...tdStyle, fontWeight: 700, color: '#1e293b' }}>{cls.name}</td>
+                  <td style={tdStyle}>
+                    {cls.grade && <span style={chipStyle('#7209b7')}>{cls.grade}</span>}
+                  </td>
+                  <td style={tdStyle}>
+                    {cls.subject && <span style={chipStyle('#4361ee')}>{cls.subject}</span>}
+                  </td>
+                  <td style={tdStyle}>
+                    <span style={{ color: cls.teachers?.name ? '#1e293b' : '#94a3b8' }}>
+                      {cls.teachers?.name ?? '미배정'}
+                    </span>
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'center' }}>
+                    <span style={{
+                      fontSize: 12, fontWeight: 700,
+                      color: cls.student_count > 0 ? '#4361ee' : '#94a3b8',
+                      background: cls.student_count > 0 ? '#eef2ff' : '#f1f5f9',
+                      padding: '2px 10px', borderRadius: 20,
+                    }}>{cls.student_count ?? 0}명</span>
+                  </td>
+                  <td style={{ ...tdStyle, color: '#64748b' }}>{cls.day_of_week || '—'}</td>
+                  <td style={{ ...tdStyle, color: '#64748b' }}>
+                    {cls.start_time ? cls.start_time.slice(0, 5) : '—'}
+                  </td>
+                  <td style={{ ...tdStyle, color: '#64748b', maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {cls.description || '—'}
+                  </td>
+                  <td style={{ ...tdStyle, textAlign: 'right' }}>
+                    <button onClick={() => onManageStudents(cls)} style={listBtn('#eef2ff', '#4361ee')} title="학생 관리">
+                      <i className="fas fa-users" />
+                    </button>
+                    {can && (
+                      <>
+                        <button onClick={() => onEdit(cls)} style={listBtn('#f1f5f9', '#475569')} title="수정">
+                          <i className="fas fa-edit" />
+                        </button>
+                        <button onClick={() => onDelete(cls)} style={listBtn('#fef2f2', '#ef4444')} title="삭제">
+                          <i className="fas fa-trash" />
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+const thStyle = { padding: '12px 14px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' };
+const tdStyle = { padding: '10px 14px', verticalAlign: 'middle' };
+function chipStyle(color) {
+  return { padding: '2px 8px', background: color + '18', color, borderRadius: 12, fontSize: 11, fontWeight: 700 };
+}
+function listBtn(bg, color) {
+  return {
+    background: bg, color, border: 'none', padding: '6px 9px',
+    borderRadius: 6, cursor: 'pointer', fontSize: 12, marginLeft: 4,
+  };
+}
+
+/* ─────────────────────────────────────────────
+   폴더 뷰 (학년별 / 강사별 그룹 + 접기·펼치기)
+───────────────────────────────────────────── */
+function ClassFolderView({ items, groupBy, collapsedGroups, onToggleGroup, canModifyFn, onEdit, onDelete, onManageStudents }) {
+  // 그룹핑
+  const groups = (() => {
+    const map = new Map();
+    items.forEach(cls => {
+      const key = groupBy === 'teacher'
+        ? (cls.teachers?.name ?? '__unassigned__')
+        : (cls.grade || '__nograde__');
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(cls);
+    });
+    return map;
+  })();
+
+  // 정렬: 학년은 GRADE_ORDER, 강사는 가나다순. 미배정·미지정은 마지막.
+  const sortedKeys = [...groups.keys()].sort((a, b) => {
+    if (a === '__unassigned__' || a === '__nograde__') return 1;
+    if (b === '__unassigned__' || b === '__nograde__') return -1;
+    if (groupBy === 'grade') {
+      return (GRADE_ORDER[a] ?? 99) - (GRADE_ORDER[b] ?? 99);
+    }
+    return a.localeCompare(b, 'ko');
+  });
+
+  function labelFor(key) {
+    if (key === '__unassigned__') return '담당 미배정';
+    if (key === '__nograde__')    return '학년 미지정';
+    return key;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {sortedKeys.map(key => {
+        const classes = groups.get(key);
+        const collapsed = collapsedGroups.has(key);
+        const totalStudents = classes.reduce((sum, c) => sum + (c.student_count ?? 0), 0);
+        const isUnassigned = key === '__unassigned__' || key === '__nograde__';
+
+        return (
+          <div key={key} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <button
+              onClick={() => onToggleGroup(key)}
+              style={{
+                width: '100%',
+                padding: '12px 16px',
+                background: isUnassigned ? '#f8fafc' : 'linear-gradient(135deg, #eef2ff 0%, #f3e8ff 100%)',
+                border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 10,
+                textAlign: 'left',
+              }}
+            >
+              <i className={`fas ${collapsed ? 'fa-folder' : 'fa-folder-open'}`} style={{ color: isUnassigned ? '#94a3b8' : '#7209b7', fontSize: 16 }} />
+              <span style={{ fontSize: 14, fontWeight: 700, color: isUnassigned ? '#64748b' : '#1e293b' }}>
+                {labelFor(key)}
+              </span>
+              <span style={{ fontSize: 11, color: '#64748b', background: '#fff', padding: '2px 10px', borderRadius: 12, fontWeight: 600 }}>
+                반 {classes.length}개
+              </span>
+              <span style={{ fontSize: 11, color: '#4361ee', background: '#eef2ff', padding: '2px 10px', borderRadius: 12, fontWeight: 700 }}>
+                학생 {totalStudents}명
+              </span>
+              <i className={`fas fa-chevron-${collapsed ? 'right' : 'down'}`} style={{ marginLeft: 'auto', color: '#94a3b8', fontSize: 12 }} />
+            </button>
+
+            {!collapsed && (
+              <div style={{ padding: '8px 12px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {classes.map(cls => {
+                  const can = canModifyFn(cls);
+                  return (
+                    <div key={cls.id} style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1.4fr auto auto auto 1fr auto',
+                      gap: 10, alignItems: 'center',
+                      padding: '8px 12px',
+                      background: '#fff',
+                      border: '1px solid #f1f5f9',
+                      borderRadius: 8,
+                    }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{cls.name}</span>
+                      {cls.subject ? <span style={chipStyle('#4361ee')}>{cls.subject}</span> : <span />}
+                      {cls.grade ? <span style={chipStyle('#7209b7')}>{cls.grade}</span> : <span />}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: cls.student_count > 0 ? '#4361ee' : '#94a3b8' }}>
+                        <i className="fas fa-user-graduate" style={{ marginRight: 3, fontSize: 10 }} />
+                        {cls.student_count ?? 0}명
+                      </span>
+                      <span style={{ fontSize: 12, color: '#64748b' }}>
+                        {[cls.day_of_week, cls.start_time?.slice(0, 5)].filter(Boolean).join(' · ') || '—'}
+                      </span>
+                      <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        <button onClick={() => onManageStudents(cls)} style={listBtn('#eef2ff', '#4361ee')} title="학생 관리">
+                          <i className="fas fa-users" />
+                        </button>
+                        {can && (
+                          <>
+                            <button onClick={() => onEdit(cls)} style={listBtn('#f1f5f9', '#475569')} title="수정">
+                              <i className="fas fa-edit" />
+                            </button>
+                            <button onClick={() => onDelete(cls)} style={listBtn('#fef2f2', '#ef4444')} title="삭제">
+                              <i className="fas fa-trash" />
+                            </button>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
