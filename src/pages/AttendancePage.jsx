@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getAttendances, createAttendance, updateAttendance, deleteAttendance, getComments, addComment, getTeachers } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
@@ -26,31 +26,39 @@ export default function AttendancePage() {
   const [editForm, setEditForm]       = useState(emptyForm());
   const showToast = useToast();
   const { profile } = useAuth();
+  const loadReqRef = useRef(0); // race-guard: 최신 요청만 setState 반영
 
   useEffect(() => {
     getTeachers().then(setTeachers).catch(console.error);
   }, []);
 
   async function loadAtt(id) {
+    const reqId = ++loadReqRef.current;
     try {
       const data = await getAttendances(id);
+      if (reqId !== loadReqRef.current) return; // 더 새 요청이 시작됨 → 폐기
       setAttendances(data);
-      const cm = {};
-      await Promise.all(data.map(async a => {
-        const c = await getComments(a.id);
-        cm[a.id] = c;
-      }));
-      setComments(cm);
+      // 댓글은 개별 실패가 전체를 깨뜨리지 않도록 per-item catch
+      const commentPairs = await Promise.all(
+        data.map(async a => {
+          try { return [a.id, await getComments(a.id)]; }
+          catch { return [a.id, []]; }
+        })
+      );
+      if (reqId !== loadReqRef.current) return;
+      setComments(Object.fromEntries(commentPairs));
     } catch { showToast('출석 로드 실패', 'error'); }
   }
 
   useEffect(() => {
     if (students.length && selectedId === null) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedId(students[0].id);
       loadAtt(students[0].id);
     }
-  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
+    // selectedId 가 null → 첫 학생 id 로 set 되고 가드(selectedId === null)에 의해 재실행 안 됨
+    // students 만 의존으로 충분 (loadAtt 은 매 렌더 새로 생성되지만 호출 시점 버전 사용)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students]);
 
   async function submitComment(attId) {
     const text = commentInputs[attId]?.trim();

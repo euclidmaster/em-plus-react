@@ -9,9 +9,16 @@ export default function DashboardPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([getDashboardStats(), getRecentActivity(), getTodaySchedule()])
-      .then(([s, a, sc]) => { setStats(s); setActivity(a); setSchedule(sc); })
-      .catch(console.error);
+    // 부분 실패 허용: 셋 중 하나가 실패해도 나머지는 그대로 표시
+    Promise.allSettled([getDashboardStats(), getRecentActivity(), getTodaySchedule()])
+      .then(([sRes, aRes, scRes]) => {
+        if (sRes.status === 'fulfilled') setStats(sRes.value);
+        else console.error('대시보드 통계 로드 실패:', sRes.reason);
+        if (aRes.status === 'fulfilled') setActivity(aRes.value);
+        else console.error('최근 활동 로드 실패:', aRes.reason);
+        if (scRes.status === 'fulfilled') setSchedule(scRes.value);
+        else console.error('오늘 일정 로드 실패:', scRes.reason);
+      });
   }, []);
 
   return (

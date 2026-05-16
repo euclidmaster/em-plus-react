@@ -30,7 +30,7 @@ export default function WeeklyPlanPage() {
   }, [selectedId, weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addPlan() {
-    setPlans(prev => [...prev, { id:null, student_id: selectedId, week_start: weekStart, subject:'국어', main_material:'', sub_material:'', study_range:'', material_types:[] }]);
+    setPlans(prev => [...prev, { id:null, _cid: Date.now() + Math.random(), student_id: selectedId, week_start: weekStart, subject:'국어', main_material:'', sub_material:'', study_range:'', material_types:[] }]);
   }
 
   function updatePlan(idx, key, val) {
@@ -77,7 +77,7 @@ export default function WeeklyPlanPage() {
 
       <div className="plan-grid" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:16 }}>
         {plans.map((plan, idx) => (
-          <div key={idx} className="card" style={{ padding:0, overflow:'hidden' }}>
+          <div key={plan.id ?? plan._cid ?? idx} className="card" style={{ padding:0, overflow:'hidden' }}>
             <div style={{ background: colorMap[COLORS[idx%COLORS.length]], padding:'12px 16px', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
               <select value={plan.subject} onChange={e => updatePlan(idx,'subject',e.target.value)}
                 style={{ background:'transparent', border:'none', color:'#fff', fontWeight:700, fontSize:14, cursor:'pointer', fontFamily:'inherit' }}>

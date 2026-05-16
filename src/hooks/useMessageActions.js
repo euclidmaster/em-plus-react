@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { updateMessage, deleteMessage } from '../lib/api.js';
-import { todayLocal } from '../lib/dateUtil.js';
+import { todayLocal, toLocalDateString } from '../lib/dateUtil.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 
@@ -11,7 +11,8 @@ export function useMessageActions(setMessages) {
   const canModify = useCallback((msg) => {
     if (!profile) return false;
     if (profile.role === 'admin') return true;
-    return msg.from_id === profile.id && msg.created_at.slice(0, 10) === todayLocal();
+    // created_at 은 UTC ISO 문자열 → 로컬(KST) 기준 날짜로 변환 후 비교
+    return msg.from_id === profile.id && toLocalDateString(msg.created_at) === todayLocal();
   }, [profile]);
 
   const handleEdit = useCallback(async (id, newText) => {

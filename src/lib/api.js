@@ -574,11 +574,12 @@ export async function deletePerformance(id) {
 
 // ==================== 파일 업로드 ====================
 export async function uploadAttachment(file) {
-  const ext  = file.name.split('.').pop();
+  const ext  = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
   const path = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
   const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: false });
   if (error) throw error;
   const { data } = supabase.storage.from('attachments').getPublicUrl(path);
+  if (!data?.publicUrl) throw new Error('업로드된 파일 URL을 가져올 수 없습니다.');
   return data.publicUrl;
 }
 

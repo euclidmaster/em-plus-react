@@ -41,7 +41,7 @@ export default function GradePage() {
   }
 
   function addRow() {
-    setRows(prev => [...prev, { student_id: selectedId, exam_type: examType, subject:'국어', raw_score:'', grade_rank:'1등급', memo:'' }]);
+    setRows(prev => [...prev, { _cid: Date.now() + Math.random(), student_id: selectedId, exam_type: examType, subject:'국어', raw_score:'', grade_rank:'1등급', memo:'' }]);
   }
 
   async function save() {
@@ -94,7 +94,7 @@ export default function GradePage() {
           </thead>
           <tbody>
             {rows.map((row, idx) => (
-              <tr key={idx} style={{ borderBottom:'1px solid #f1f5f9' }}>
+              <tr key={row.id ?? row._cid ?? idx} style={{ borderBottom:'1px solid #f1f5f9' }}>
                 <td style={{ padding:'8px 14px' }}>
                   <select value={row.subject} onChange={e => updateRow(idx,'subject',e.target.value)}
                     style={{ padding:'6px 10px', border:'1.5px solid #e2e8f0', borderRadius:6, fontSize:13 }}>

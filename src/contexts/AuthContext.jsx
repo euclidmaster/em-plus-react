@@ -93,7 +93,7 @@ export function AuthProvider({ children }) {
               .eq('id', meta.studentId);
           }
         })
-        .catch(() => {});
+        .catch(e => console.warn('학생 자동 연결 실패:', e));
     }
   }
 

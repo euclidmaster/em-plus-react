@@ -31,7 +31,7 @@ export default function DailyRecordPage() {
   useEffect(() => { if (selectedId) load(); }, [selectedId, date]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
 
   function addDraft() {
-    setDrafts(prev => [...prev, { subject:'국어', material:'', study_range:'', study_minutes:'' }]);
+    setDrafts(prev => [...prev, { _cid: Date.now() + Math.random(), subject:'국어', material:'', study_range:'', study_minutes:'' }]);
   }
 
   function updateDraft(idx, key, val) {
@@ -156,7 +156,7 @@ export default function DailyRecordPage() {
           <h4 style={{ fontSize:14, fontWeight:700, color:'#64748b', marginBottom:12 }}>새 기록 입력</h4>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:12 }}>
             {drafts.map((d, idx) => (
-              <div key={idx} className="card" style={{ padding:0, overflow:'hidden' }}>
+              <div key={d._cid ?? idx} className="card" style={{ padding:0, overflow:'hidden' }}>
                 <div style={{ background: colorMap[COLORS[(records.length+idx)%COLORS.length]], padding:'10px 16px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                   <select value={d.subject} onChange={e => updateDraft(idx,'subject',e.target.value)}
                     style={{ background:'transparent', border:'none', color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>
