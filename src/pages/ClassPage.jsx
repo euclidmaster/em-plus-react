@@ -393,7 +393,7 @@ function ClassForm({ form, setForm, teachers }) {
         <label style={lbl}>반 이름 *</label>
         <input type="text" value={form.name}
           onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-          placeholder="예: 화목반, 수학 심화반"
+          placeholder="예: 고1-김선생, 고1 (선생님은 나중에 지정 가능)"
           style={inp} autoFocus />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

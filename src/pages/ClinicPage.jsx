@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
@@ -28,6 +29,7 @@ const COLOR_PALETTE = [
 export default function ClinicPage() {
   const { profile } = useAuth();
   const showToast = useToast();
+  const navigate = useNavigate();
   const role = profile?.role ?? 'teacher';
   const isAssistant = role === 'assistant';
   const isAdmin     = role === 'admin';
@@ -103,12 +105,17 @@ export default function ClinicPage() {
         class_name:   className,
       });
 
-      // 반 템플릿이 있으면 해당 반의 학생/과목/유형/지시사항으로 아이템 일괄 생성
+      // 반 지정 시 아이템 자동 생성:
+      //   1순위) 저장된 템플릿이 있으면 그 명단/과목/유형/지시사항으로
+      //   2순위) 템플릿 없으면 students.class_name 기반으로 해당 반 학생 전체를 빈 행으로
       let items = [];
+      let source = null;       // 'template' | 'roster' | null
+      let createFailed = false; // 아이템 INSERT 자체가 실패한 경우 추적
       if (className) {
         const tmpl = await getClinicClassTemplate(className).catch(() => []);
+        let rows = [];
         if (tmpl.length > 0) {
-          const rows = tmpl.map((t, i) => ({
+          rows = tmpl.map((t, i) => ({
             session_id:   newSession.id,
             student_id:   t.student_id,
             subject:      t.subject       ?? '',
@@ -117,16 +124,43 @@ export default function ClinicPage() {
             result:       '',
             sort_order:   i,
           }));
-          const created = await createClinicItems(rows).catch(() => []);
-          items = created.map(it => ({ ...it, clinic_replies: [] }));
+          source = 'template';
+        } else {
+          const roster = students.filter(s => s.class_name === className);
+          if (roster.length > 0) {
+            rows = roster.map((s, i) => ({
+              session_id:   newSession.id,
+              student_id:   s.id,
+              subject:      '',
+              clinic_type:  '',
+              instructions: '',
+              result:       '',
+              sort_order:   i,
+            }));
+            source = 'roster';
+          }
+        }
+        if (rows.length > 0) {
+          try {
+            const created = await createClinicItems(rows);
+            items = (created ?? []).map(it => ({ ...it, clinic_replies: [] }));
+          } catch (e) {
+            createFailed = true;
+            showToast(`${className} 명단 생성 실패: ${e.message}`, 'error');
+          }
         }
       }
 
       setSessions(prev => [...prev, { ...newSession, clinic_items: items }]);
-      if (className) {
-        showToast(items.length > 0
-          ? `${className} 반 명단 ${items.length}건이 자동 입력되었습니다.`
-          : `${className} 반 세션이 생성되었습니다. (저장된 템플릿 없음)`);
+      // 실패 토스트는 위에서 이미 띄웠으니, 성공/빈 케이스에만 안내 토스트
+      if (className && !createFailed) {
+        if (items.length > 0 && source === 'template') {
+          showToast(`${className} 반 템플릿 명단 ${items.length}건이 자동 입력되었습니다.`);
+        } else if (items.length > 0 && source === 'roster') {
+          showToast(`${className} 반 학생 ${items.length}명이 추가되었습니다. 상단의 "일괄 입력"으로 공통값을 한 번에 채울 수 있습니다.`);
+        } else if (source === null) {
+          showToast(`${className} 반 세션이 생성되었습니다. (해당 반 학생 없음)`);
+        }
       }
     } catch (e) {
       showToast('세션 추가 실패: ' + e.message, 'error');
@@ -189,6 +223,55 @@ export default function ClinicPage() {
       ));
     } catch (e) {
       showToast('행 추가 실패: ' + e.message, 'error');
+    }
+  }
+
+  // 세션 내 모든 아이템에 공통값 일괄 적용
+  // patch: { subject?, clinic_type?, instructions? } — 빈 문자열 값은 무시
+  // overwrite=false: 해당 필드가 비어있는 행에만 적용 (기본)
+  // overwrite=true : 기존 값도 덮어쓰기
+  async function handleBulkApply(sessionId, patch, overwrite) {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    const items = session.clinic_items ?? [];
+    if (items.length === 0) { showToast('적용할 학생이 없습니다.', 'error'); return; }
+
+    const meaningful = Object.fromEntries(Object.entries(patch).filter(([, v]) => v));
+    if (Object.keys(meaningful).length === 0) { showToast('적용할 값이 없습니다.', 'error'); return; }
+
+    // 각 아이템마다 실제로 변경될 필드만 추림
+    const targets = items
+      .map(it => {
+        const fields = {};
+        Object.entries(meaningful).forEach(([k, v]) => {
+          const current = it[k] ?? '';
+          if (overwrite || !current) fields[k] = v;
+        });
+        return Object.keys(fields).length > 0 ? { id: it.id, fields } : null;
+      })
+      .filter(Boolean);
+
+    if (targets.length === 0) {
+      showToast('모든 행이 이미 채워져 있습니다. (덮어쓰기 옵션 사용 가능)');
+      return;
+    }
+
+    try {
+      await Promise.all(targets.map(t => updateClinicItem(t.id, t.fields)));
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sessionId) return s;
+        return {
+          ...s,
+          clinic_items: s.clinic_items.map(i => {
+            const t = targets.find(x => x.id === i.id);
+            return t ? { ...i, ...t.fields } : i;
+          }),
+        };
+      }));
+      showToast(`${targets.length}명에게 일괄 적용되었습니다.`);
+    } catch (e) {
+      showToast('일괄 적용 실패: ' + e.message, 'error');
+      loadSessions();
     }
   }
 
@@ -333,6 +416,23 @@ export default function ClinicPage() {
           )}
           {canEdit && (
             <button
+              onClick={() => navigate('/classes')}
+              style={{
+                padding: '7px 12px',
+                background: '#fff',
+                color: '#64748b',
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+              title="반 추가·수정·삭제 (반 관리 페이지로 이동)"
+            >
+              <i className="fas fa-cog" /> 반 관리
+            </button>
+          )}
+          {canEdit && (
+            <button
               onClick={() => setShowTemplateModal(true)}
               style={{ padding: '7px 14px', background: '#fff', color: '#7209b7', border: '1.5px solid #c4b5fd', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
               title="반 템플릿 관리"
@@ -433,6 +533,7 @@ create index if not exists idx_clinic_class_templates_class_name
               onAddItem={handleAddItem}
               onUpdateItem={handleUpdateItem}
               onDeleteItem={handleDeleteItem}
+              onBulkApply={(patch, overwrite) => handleBulkApply(session.id, patch, overwrite)}
               onAddReply={(itemId, payload) => handleAddReply(session.id, itemId, payload)}
               onUpdateReply={(itemId, replyId, content) => handleUpdateReply(session.id, itemId, replyId, content)}
               onDeleteReply={(itemId, replyId) => handleDeleteReply(session.id, itemId, replyId)}
@@ -460,7 +561,7 @@ function SessionCard({
   session, color, isAssistant, isAdmin, canEdit,
   teacherList, assistantList, students, myRecord, classNames,
   onUpdateSession, onDeleteSession, onAddItem, onUpdateItem, onDeleteItem,
-  onAddReply, onUpdateReply, onDeleteReply, onSaveTemplate,
+  onAddReply, onUpdateReply, onDeleteReply, onSaveTemplate, onBulkApply,
 }) {
   const primaryId   = isAssistant ? session.assistant_id  : session.teacher_id;
   const secondaryId = isAssistant ? session.teacher_id    : session.assistant_id;
@@ -573,6 +674,11 @@ function SessionCard({
       </div>
 
       <div style={{ height: 2, background: color.btnBg }} />
+
+      {/* 일괄 입력 바: 행이 2개 이상일 때만 노출 (단일 행은 굳이 일괄이 필요 없음) */}
+      {canEdit && !isAssistant && (session.clinic_items ?? []).length >= 2 && (
+        <BulkApplyBar onApply={onBulkApply} color={color} />
+      )}
 
       {/* 아이템 목록 */}
       <div style={{ padding: '14px 16px' }}>
@@ -954,6 +1060,118 @@ function ReplyInput({ myRecord, onSave, onCancel }) {
     </div>
   );
 }
+
+/* ─────────────────────────────────────────────
+   일괄 입력 바 (공통값을 세션 내 모든 행에 한 번에 적용)
+───────────────────────────────────────────── */
+function BulkApplyBar({ onApply, color }) {
+  const [subject, setSubject]           = useState('');
+  const [clinicType, setClinicType]     = useState('');
+  const [instructions, setInstructions] = useState('');
+  const [overwrite, setOverwrite]       = useState(false);
+  const [open, setOpen]                 = useState(false);
+
+  const hasValue = !!(subject || clinicType || instructions);
+
+  function reset() {
+    setSubject(''); setClinicType(''); setInstructions('');
+  }
+
+  async function handleApply() {
+    if (!hasValue) return;
+    await onApply({ subject, clinic_type: clinicType, instructions }, overwrite);
+    reset();
+  }
+
+  if (!open) {
+    return (
+      <div style={{ padding: '8px 16px', background: '#fff', borderBottom: `1px solid ${color.border}`, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button
+          onClick={() => setOpen(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '5px 12px',
+            background: '#f3e8ff', color: '#7209b7',
+            border: '1px dashed #c4b5fd', borderRadius: 7,
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}
+          title="공통값을 모든 학생에게 한 번에 적용"
+        >
+          <i className="fas fa-bolt" /> 일괄 입력 열기
+        </button>
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>
+          반 전체에 같은 과목/클리닉/지시내용을 한 번에 입력
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      padding: '10px 16px', background: '#faf5ff',
+      borderBottom: `1px solid ${color.border}`,
+      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+    }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#7209b7', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 4 }}>
+        <i className="fas fa-bolt" /> 일괄 입력
+      </span>
+      <select value={subject} onChange={e => setSubject(e.target.value)} style={bulkInputStyle}>
+        <option value="">과목</option>
+        {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+      <select value={clinicType} onChange={e => setClinicType(e.target.value)} style={bulkInputStyle}>
+        <option value="">클리닉</option>
+        {CLINIC_TYPES.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <input
+        type="text"
+        value={instructions}
+        onChange={e => setInstructions(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') handleApply(); }}
+        placeholder="지시내용 (선택)"
+        style={{ ...bulkInputStyle, flex: '1 1 200px', minWidth: 160 }}
+      />
+      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#64748b', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <input type="checkbox" checked={overwrite} onChange={e => setOverwrite(e.target.checked)} />
+        기존값 덮어쓰기
+      </label>
+      <button
+        onClick={handleApply}
+        disabled={!hasValue}
+        style={{
+          padding: '6px 14px',
+          background: hasValue ? '#7209b7' : '#e2e8f0',
+          color: hasValue ? '#fff' : '#94a3b8',
+          border: 'none', borderRadius: 7,
+          fontSize: 12, fontWeight: 700,
+          cursor: hasValue ? 'pointer' : 'default',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        전체 적용
+      </button>
+      <button
+        onClick={() => { reset(); setOpen(false); }}
+        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, padding: 4 }}
+        title="닫기"
+      >
+        <i className="fas fa-times" />
+      </button>
+    </div>
+  );
+}
+
+const bulkInputStyle = {
+  padding: '5px 8px',
+  border: '1px solid #e2e8f0',
+  borderRadius: 6,
+  fontSize: 12,
+  background: '#fff',
+  color: '#1e293b',
+  outline: 'none',
+  fontFamily: 'inherit',
+  minWidth: 80,
+};
 
 /* ─────────────────────────────────────────────
    스타일 헬퍼
