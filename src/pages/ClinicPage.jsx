@@ -690,8 +690,8 @@ function SessionCard({
 
         {/* 컬럼 헤더 */}
         {(session.clinic_items ?? []).length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, marginBottom: 6, padding: '0 2px' }}>
-            {['학생', '과목', '클리닉', isAssistant ? '지시내용' : '내용', ''].map((h, i) => (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 1.4fr 1.4fr auto', gap: 8, marginBottom: 6, padding: '0 2px' }}>
+            {['학생', '과목', '클리닉', '지시내용', '결과', ''].map((h, i) => (
               <div key={i} style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textAlign: 'left' }}>{h}</div>
             ))}
           </div>
@@ -738,7 +738,7 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
   const replies = item.clinic_replies ?? [];
   const canAddReply = (isAssistant || isAdmin) && canEdit;
 
-  const hasContent = !!(item.student_id || item.subject || item.clinic_type || item.instructions);
+  const hasContent = !!(item.student_id || item.subject || item.clinic_type || item.instructions || item.result);
   const [editing, setEditing] = useState(!hasContent);
   const [saving,  setSaving]  = useState(false);
   const [showReplyInput, setShowReplyInput] = useState(false);
@@ -747,11 +747,13 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
   const [subject,    setSubject]    = useState(item.subject ?? '');
   const [clinicType, setClinicType] = useState(item.clinic_type ?? '');
   const [memo,       setMemo]       = useState(item.instructions ?? '');
+  const [result,     setResult]     = useState(item.result ?? '');
 
   useEffect(() => { if (!editing) setStudentId(item.student_id ?? '');  }, [item.student_id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!editing) setSubject(item.subject ?? '');        }, [item.subject]);    // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!editing) setClinicType(item.clinic_type ?? ''); }, [item.clinic_type]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!editing) setMemo(item.instructions ?? '');      }, [item.instructions]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!editing) setResult(item.result ?? '');          }, [item.result]);       // eslint-disable-line react-hooks/exhaustive-deps
 
   const studentName = students.find(s => s.id === studentId)?.name ?? item.students?.name;
 
@@ -763,6 +765,7 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
         subject,
         clinic_type:  clinicType,
         instructions: memo,
+        result,
       });
       setEditing(false);
     } finally {
@@ -860,11 +863,12 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
   if (!canEdit) {
     return (
       <div style={{ marginBottom: 8 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 1.4fr 1.4fr auto', gap: 8, alignItems: 'center' }}>
           <div style={lockedCell}>{studentName || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
           <div style={lockedCell}>{item.subject || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
           <div style={lockedCell}>{item.clinic_type || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
           <div style={lockedCell}>{item.instructions || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
+          <div style={lockedCell}>{item.result || <span style={{ color: '#cbd5e1' }}>—</span>}</div>
           <div style={{ width: 68 }} />
         </div>
         {replies.length > 0 && (
@@ -882,11 +886,12 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
   if (!editing) {
     return (
       <div style={{ marginBottom: 8 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 1.4fr 1.4fr auto', gap: 8, alignItems: 'center' }}>
           <div style={savedCell}>{studentName || <span style={{ color: '#86efac' }}>—</span>}</div>
           <div style={savedCell}>{item.subject || <span style={{ color: '#86efac' }}>—</span>}</div>
           <div style={savedCell}>{item.clinic_type || <span style={{ color: '#86efac' }}>—</span>}</div>
           <div style={savedCell}>{item.instructions || <span style={{ color: '#86efac' }}>—</span>}</div>
+          <div style={item.result ? savedCell : { ...savedCell, color: '#cbd5e1', fontStyle: 'italic', fontWeight: 500 }}>{item.result || '결과 미입력'}</div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
             <>
               <button
@@ -922,7 +927,7 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
   /* ── 편집 모드 (강사/원장만 진입 가능) ── */
   return (
     <div style={{ marginBottom: 8 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 110px 2fr auto', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px 1.4fr 1.4fr auto', gap: 8, alignItems: 'center' }}>
         <select value={studentId} onChange={e => setStudentId(e.target.value)} style={{ ...editCell, ...selectSuffix }}>
           <option value="">학생 선택</option>
           {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -940,6 +945,14 @@ function ItemRow({ item, color, canEdit, isAssistant, isAdmin, students, myRecor
           value={memo}
           placeholder="지시내용 입력"
           onChange={e => setMemo(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+          style={editCell}
+        />
+        <input
+          type="text"
+          value={result}
+          placeholder="결과 입력 (선택)"
+          onChange={e => setResult(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
           style={editCell}
         />

@@ -1167,14 +1167,13 @@ export async function getClinicReportData(studentId, yearMonth) {
 
   const { data: items, error: iErr } = await supabase
     .from('clinic_items')
-    .select('id, session_id, subject, clinic_type, instructions')
+    .select('id, session_id, subject, clinic_type, instructions, result')
     .eq('student_id', studentId)
     .in('session_id', sessionIds);
   if (iErr) throw iErr;
   if (!items?.length) return [];
 
   const itemIds = items.map(i => i.id);
-  const itemMap = Object.fromEntries(items.map(i => [i.id, i]));
 
   const { data: replies, error: rErr } = await supabase
     .from('clinic_replies')
@@ -1183,21 +1182,46 @@ export async function getClinicReportData(studentId, yearMonth) {
     .order('created_at');
   if (rErr) throw rErr;
 
-  return (replies ?? [])
-    .map(reply => {
-      const item = itemMap[reply.item_id];
-      const session = item ? (sessionMap[item.session_id] ?? null) : null;
-      return {
-        id: reply.id,
-        subject: item?.subject ?? '',
-        clinic_type: item?.clinic_type ?? '',
-        instructions: item?.instructions ?? '',
-        result: reply.content,
-        author: reply.author_name,
-        session,
-      };
-    })
-    .sort((a, b) => (a.session?.session_date ?? '') > (b.session?.session_date ?? '') ? 1 : -1);
+  // 아이템별로 보고(reply)들을 그룹화
+  const repliesByItem = {};
+  (replies ?? []).forEach(r => {
+    if (!repliesByItem[r.item_id]) repliesByItem[r.item_id] = [];
+    repliesByItem[r.item_id].push(r);
+  });
+
+  // 각 아이템마다:
+  //   - 보고가 있으면 → 보고 1개당 1행 (기존 동작 유지, reply.content가 결과)
+  //   - 보고가 없으면 → 1행 (item.result 가 결과, 비어있으면 '미입력'으로 표시)
+  const rows = [];
+  items.forEach(item => {
+    const session = sessionMap[item.session_id] ?? null;
+    const itemReplies = repliesByItem[item.id] ?? [];
+    const baseRow = {
+      subject: item.subject ?? '',
+      clinic_type: item.clinic_type ?? '',
+      instructions: item.instructions ?? '',
+      session,
+    };
+    if (itemReplies.length === 0) {
+      rows.push({
+        id: `item-${item.id}`,
+        ...baseRow,
+        result: item.result ?? '',
+        author: '',
+      });
+    } else {
+      itemReplies.forEach(reply => {
+        rows.push({
+          id: reply.id,
+          ...baseRow,
+          result: reply.content,
+          author: reply.author_name,
+        });
+      });
+    }
+  });
+
+  return rows.sort((a, b) => (a.session?.session_date ?? '') > (b.session?.session_date ?? '') ? 1 : -1);
 }
 
 function getMondayOfWeek(date) {
