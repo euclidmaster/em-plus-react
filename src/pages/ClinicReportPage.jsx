@@ -60,14 +60,18 @@ export default function ClinicReportPage() {
     }
   }
 
-  /* 리포트 화면 전체를 이미지(PNG)로 캡처해 다운로드
-     — html2canvas는 요소의 전체 높이(scrollHeight)를 렌더하므로
-       스크롤로 가려진 부분까지 한 장에 모두 담긴다. */
+  /* 리포트 화면 전체를 이미지(PNG)로 캡처:
+       1) PNG 파일 다운로드
+       2) 클립보드에도 복사 → 카톡·메모 등에 바로 붙여넣기 가능
+     html2canvas는 요소의 전체 높이(scrollHeight)를 렌더하므로
+     스크롤로 가려진 부분까지 한 장에 모두 담긴다. */
   async function handleSaveImage() {
     const el = reportRef.current;
     if (!el) return;
     setCapturing(true);
-    try {
+
+    // 캡처 → PNG blob (한 번만 생성, 다운로드·클립보드가 공유)
+    const blobPromise = (async () => {
       const canvas = await html2canvas(el, {
         scale: 2,                  // 2배 해상도 (선명하게)
         backgroundColor: '#ffffff',
@@ -76,12 +80,32 @@ export default function ClinicReportPage() {
         windowWidth: el.scrollWidth,
         windowHeight: el.scrollHeight,
       });
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-      if (!blob) throw new Error('이미지 변환 실패');
+      const b = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (!b) throw new Error('이미지 변환 실패');
+      return b;
+    })();
 
+    // 클립보드 쓰기는 클릭(사용자 제스처) 직후 동기적으로 시작해야 권한이 유지된다.
+    // ClipboardItem에 blob 대신 Promise를 넘기면 캡처가 끝날 때까지 브라우저가 대기.
+    let clipboardPromise = null;
+    let clipboardOk = false;
+    if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+      try {
+        clipboardPromise = navigator.clipboard
+          .write([new window.ClipboardItem({ 'image/png': blobPromise })])
+          .then(() => { clipboardOk = true; })
+          .catch(() => { clipboardOk = false; });
+      } catch {
+        clipboardPromise = null;
+      }
+    }
+
+    try {
+      const blob = await blobPromise;
+
+      // 1) PNG 파일 다운로드
       const [y, m] = yearMonth.split('-');
       const fname = `${student?.name ?? '학생'}-${y}-${parseInt(m)}-월간 리포트.png`;
-
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -90,8 +114,20 @@ export default function ClinicReportPage() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      showToast('리포트 이미지가 저장되었습니다.');
+
+      // 2) 클립보드 복사 완료 대기
+      if (clipboardPromise) await clipboardPromise;
+
+      if (clipboardPromise && clipboardOk) {
+        showToast('이미지 저장 완료 — 클립보드에도 복사됨 (바로 붙여넣기 가능)');
+      } else if (clipboardPromise) {
+        showToast('이미지는 저장됐지만 클립보드 복사에 실패했습니다.');
+      } else {
+        showToast('이미지가 저장되었습니다. (이 브라우저는 클립보드 복사 미지원)');
+      }
     } catch (e) {
+      // 캡처 실패 시 클립보드 promise도 정리 (unhandled rejection 방지)
+      if (clipboardPromise) { try { await clipboardPromise; } catch { /* ignore */ } }
       showToast('이미지 저장 실패: ' + e.message, 'error');
     } finally {
       setCapturing(false);
