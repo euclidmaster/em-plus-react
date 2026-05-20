@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas';
 import { useStudentList } from '../hooks/useStudentList.js';
 import { getClinicReportData, getRoutineMonthlyData } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
@@ -27,6 +28,9 @@ export default function ClinicReportPage() {
   const [viewMode,     setViewMode]     = useState('report');   // 'report' | 'ai'
   const [aiSummary,    setAiSummary]    = useState('');
   const [aiLoading,    setAiLoading]    = useState(false);
+  const [capturing,    setCapturing]    = useState(false);
+
+  const reportRef = useRef(null);
 
   const student = students.find(s => s.id === studentId);
 
@@ -53,6 +57,44 @@ export default function ClinicReportPage() {
       setItems([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  /* 리포트 화면 전체를 이미지(PNG)로 캡처해 다운로드
+     — html2canvas는 요소의 전체 높이(scrollHeight)를 렌더하므로
+       스크롤로 가려진 부분까지 한 장에 모두 담긴다. */
+  async function handleSaveImage() {
+    const el = reportRef.current;
+    if (!el) return;
+    setCapturing(true);
+    try {
+      const canvas = await html2canvas(el, {
+        scale: 2,                  // 2배 해상도 (선명하게)
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
+      });
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (!blob) throw new Error('이미지 변환 실패');
+
+      const [y, m] = yearMonth.split('-');
+      const fname = `${student?.name ?? '학생'}-${y}-${parseInt(m)}-월간 리포트.png`;
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast('리포트 이미지가 저장되었습니다.');
+    } catch (e) {
+      showToast('이미지 저장 실패: ' + e.message, 'error');
+    } finally {
+      setCapturing(false);
     }
   }
 
@@ -117,6 +159,22 @@ export default function ClinicReportPage() {
               onChange={e => setYearMonth(e.target.value)}
               style={ctrlStyle}
             />
+            <button
+              onClick={handleSaveImage}
+              disabled={!hasData || capturing}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 20px',
+                background: (hasData && !capturing) ? '#16a34a' : '#e2e8f0',
+                color:  (hasData && !capturing) ? '#fff' : '#94a3b8',
+                border: 'none', borderRadius: 8,
+                fontSize: 14, fontWeight: 600,
+                cursor: (hasData && !capturing) ? 'pointer' : 'not-allowed',
+              }}
+            >
+              <i className={capturing ? 'fas fa-spinner fa-spin' : 'fas fa-image'} />
+              {capturing ? '캡처 중...' : '이미지 저장'}
+            </button>
             <button
               onClick={() => window.print()}
               disabled={!hasData}
@@ -183,7 +241,7 @@ export default function ClinicReportPage() {
             {monthLabel}에 클리닉 기록이 없습니다.
           </div>
         ) : (
-          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          <div ref={reportRef} style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
             {/* 리포트 헤더 */}
             <ReportHeader studentName={student?.name ?? ''} monthLabel={monthLabel} totalCount={totalCount} />
 
