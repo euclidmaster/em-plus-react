@@ -4,6 +4,7 @@ import { useStudentList } from '../hooks/useStudentList.js';
 import {
   getClinicReportData, getRoutineMonthlyData,
   getClinicReportComments, upsertClinicReportComment, deleteClinicReportComment,
+  updateClinicReportRow, hideClinicReportRow, unhideClinicReportRow,
 } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 
@@ -33,6 +34,7 @@ export default function ClinicReportPage() {
   const [aiLoading,    setAiLoading]    = useState(false);
   const [capturing,    setCapturing]    = useState(false);
   const [comments,     setComments]     = useState({});   // { [subject]: { id, comment } }
+  const [showHidden,   setShowHidden]   = useState(false);
 
   const reportRef = useRef(null);
 
@@ -95,6 +97,38 @@ export default function ClinicReportPage() {
       showToast('코멘트가 삭제되었습니다.');
     } catch (e) {
       showToast('코멘트 삭제 실패: ' + e.message, 'error');
+    }
+  }
+
+  /* 리포트 행 수정 (지시내용 + 결과) — 실패 시 throw → 행이 편집 모드 유지 */
+  async function handleEditRow(row, patch) {
+    try {
+      await updateClinicReportRow(row, patch);
+      setItems(prev => prev.map(r => r.id === row.id ? { ...r, ...patch } : r));
+      showToast('수정되었습니다.');
+    } catch (e) {
+      showToast('수정 실패: ' + e.message, 'error');
+      throw e;
+    }
+  }
+
+  /* 리포트 행 숨김 / 숨김 해제 (원본 클리닉 데이터는 보존) */
+  async function handleHideRow(row) {
+    try {
+      await hideClinicReportRow(row.id);
+      setItems(prev => prev.map(r => r.id === row.id ? { ...r, hidden: true } : r));
+      showToast('이 항목을 리포트에서 숨겼습니다.');
+    } catch (e) {
+      showToast('숨기기 실패: ' + e.message, 'error');
+    }
+  }
+  async function handleUnhideRow(row) {
+    try {
+      await unhideClinicReportRow(row.id);
+      setItems(prev => prev.map(r => r.id === row.id ? { ...r, hidden: false } : r));
+      showToast('숨김을 해제했습니다.');
+    } catch (e) {
+      showToast('숨김 해제 실패: ' + e.message, 'error');
     }
   }
 
@@ -202,8 +236,10 @@ export default function ClinicReportPage() {
     }
   }
 
-  /* 과목별 그룹 */
-  const grouped = items.reduce((acc, item) => {
+  /* 숨김 필터 + 과목별 그룹 */
+  const hiddenCount  = items.filter(r => r.hidden).length;
+  const visibleItems = showHidden ? items : items.filter(r => !r.hidden);
+  const grouped = visibleItems.reduce((acc, item) => {
     const key = item.subject || '기타';
     (acc[key] = acc[key] ?? []).push(item);
     return acc;
@@ -211,7 +247,7 @@ export default function ClinicReportPage() {
 
   const [year, month] = yearMonth.split('-');
   const monthLabel = `${year}년 ${parseInt(month)}월`;
-  const totalCount = items.length;
+  const totalCount = visibleItems.length;
   const hasData    = !loading && studentId && totalCount > 0;
 
   return (
@@ -269,21 +305,31 @@ export default function ClinicReportPage() {
           </div>
         </div>
 
-        {/* 뷰 토글 */}
-        {hasData && (
-          <div style={{ display: 'flex', gap: 0, marginBottom: 20, background: '#f1f5f9', borderRadius: 10, padding: 4, width: 'fit-content' }}>
-            <ToggleBtn
-              active={viewMode === 'report'}
-              icon="fa-table"
-              label="리포트"
-              onClick={() => setViewMode('report')}
-            />
-            <ToggleBtn
-              active={viewMode === 'ai'}
-              icon="fa-wand-magic-sparkles"
-              label="AI 요약"
-              onClick={() => setViewMode('ai')}
-            />
+        {/* 뷰 토글 + 숨긴 항목 토글 */}
+        {(hasData || hiddenCount > 0) && !loading && studentId && (
+          <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+            {hasData && (
+              <div style={{ display: 'flex', gap: 0, background: '#f1f5f9', borderRadius: 10, padding: 4, width: 'fit-content' }}>
+                <ToggleBtn
+                  active={viewMode === 'report'}
+                  icon="fa-table"
+                  label="리포트"
+                  onClick={() => setViewMode('report')}
+                />
+                <ToggleBtn
+                  active={viewMode === 'ai'}
+                  icon="fa-wand-magic-sparkles"
+                  label="AI 요약"
+                  onClick={() => setViewMode('ai')}
+                />
+              </div>
+            )}
+            {hiddenCount > 0 && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#64748b', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showHidden} onChange={e => setShowHidden(e.target.checked)} />
+                숨긴 항목 {hiddenCount}개 표시
+              </label>
+            )}
           </div>
         )}
 
@@ -314,7 +360,9 @@ export default function ClinicReportPage() {
         ) : totalCount === 0 ? (
           <div className="no-print" style={{ textAlign: 'center', padding: 80, color: '#94a3b8' }}>
             <i className="fas fa-folder-open" style={{ fontSize: 40, marginBottom: 12, display: 'block' }} />
-            {monthLabel}에 클리닉 기록이 없습니다.
+            {hiddenCount > 0
+              ? `표시할 기록이 없습니다. 숨긴 항목 ${hiddenCount}개 — 위 "숨긴 항목 표시"를 체크하세요.`
+              : `${monthLabel}에 클리닉 기록이 없습니다.`}
           </div>
         ) : (
           <div ref={reportRef} style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
@@ -334,6 +382,9 @@ export default function ClinicReportPage() {
                       comment={comments[subject] ?? null}
                       onSaveComment={handleSaveComment}
                       onDeleteComment={handleDeleteComment}
+                      onEditRow={handleEditRow}
+                      onHideRow={handleHideRow}
+                      onUnhideRow={handleUnhideRow}
                     />
                   ))}
                   {routineData.templates.length > 0 && (
@@ -474,7 +525,7 @@ function ReportHeader({ studentName, monthLabel, totalCount }) {
 /* ─────────────────────────────────────────────
    과목 섹션
 ───────────────────────────────────────────── */
-function SubjectSection({ subject, items, isLast, comment, onSaveComment, onDeleteComment }) {
+function SubjectSection({ subject, items, isLast, comment, onSaveComment, onDeleteComment, onEditRow, onHideRow, onUnhideRow }) {
   const color = getSubjectColor(subject);
   const [editing, setEditing] = useState(false);
   const [draft,   setDraft]   = useState(comment?.comment ?? '');
@@ -504,7 +555,7 @@ function SubjectSection({ subject, items, isLast, comment, onSaveComment, onDele
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color, background: `${color}18`, padding: '3px 10px', borderRadius: 20 }}>
-            {items.length}회
+            {items.filter(r => !r.hidden).length}회
           </span>
           {/* 코멘트 관리 버튼 — 이미지 캡처·PDF 인쇄 시 숨김(no-print) */}
           {!editing && (
@@ -570,33 +621,120 @@ function SubjectSection({ subject, items, isLast, comment, onSaveComment, onDele
           </tr>
         </thead>
         <tbody>
-          {items.map((item, i) => {
-            const raw = item.session?.session_date;
-            const dateStr = raw ? new Date(raw + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '—';
-            return (
-              <tr key={item.id} style={{ background: i % 2 === 1 ? '#f8fafc' : '#fff' }}>
-                <td style={{ ...td, color: '#64748b', fontWeight: 500 }}>{dateStr}</td>
-                <td style={td}>
-                  <span style={{ background: `${color}15`, color, padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
-                    {item.clinic_type || '—'}
-                  </span>
-                </td>
-                <td style={{ ...td, textAlign: 'left', color: '#1e293b' }}>
-                  {item.instructions && (
-                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
-                      지시: {item.instructions}
-                    </div>
-                  )}
-                  <div style={{ fontWeight: 600, color: item.result ? '#1e293b' : '#94a3b8' }}>
-                    {item.result || <span style={{ fontStyle: 'italic', fontWeight: 400 }}>미입력</span>}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+          {items.map((item, i) => (
+            <ReportItemRow
+              key={item.id}
+              row={item}
+              color={color}
+              index={i}
+              onEdit={onEditRow}
+              onHide={onHideRow}
+              onUnhide={onUnhideRow}
+            />
+          ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   리포트 행 (수정 / 숨기기)
+───────────────────────────────────────────── */
+function ReportItemRow({ row, color, index, onEdit, onHide, onUnhide }) {
+  const [editing, setEditing] = useState(false);
+  const [instr,   setInstr]   = useState(row.instructions ?? '');
+  const [result,  setResult]  = useState(row.result ?? '');
+  const [saving,  setSaving]  = useState(false);
+
+  // 외부 row 변경 시 동기화 (편집 중이 아닐 때만)
+  useEffect(() => {
+    if (!editing) { setInstr(row.instructions ?? ''); setResult(row.result ?? ''); }
+  }, [row.instructions, row.result]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const raw = row.session?.session_date;
+  const dateStr = raw ? new Date(raw + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '—';
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onEdit(row, { instructions: instr.trim(), result: result.trim() });
+      setEditing(false);
+    } catch { /* 실패 토스트는 부모가 표시, 편집 모드 유지 */ }
+    finally { setSaving(false); }
+  }
+
+  return (
+    // 숨김 행은 화면에선 흐리게, 인쇄·캡처에선 제외(no-print)
+    <tr
+      className={row.hidden ? 'no-print' : undefined}
+      style={{ background: index % 2 === 1 ? '#f8fafc' : '#fff', opacity: row.hidden ? 0.55 : 1 }}
+    >
+      <td style={{ ...td, color: '#64748b', fontWeight: 500 }}>{dateStr}</td>
+      <td style={td}>
+        <span style={{ background: `${color}15`, color, padding: '2px 8px', borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
+          {row.clinic_type || '—'}
+        </span>
+      </td>
+      <td style={{ ...td, textAlign: 'left', color: '#1e293b' }}>
+        {editing ? (
+          <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <input
+              value={instr}
+              onChange={e => setInstr(e.target.value)}
+              placeholder="지시내용"
+              style={rowEditInput}
+            />
+            <input
+              value={result}
+              onChange={e => setResult(e.target.value)}
+              placeholder="결과보고"
+              onKeyDown={e => { if (e.key === 'Enter') save(); }}
+              style={rowEditInput}
+            />
+            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setEditing(false); setInstr(row.instructions ?? ''); setResult(row.result ?? ''); }}
+                style={{ padding: '4px 12px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}
+              >취소</button>
+              <button
+                onClick={save}
+                disabled={saving}
+                style={{ padding: '4px 12px', border: 'none', background: saving ? '#cbd5e1' : '#4361ee', color: '#fff', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}
+              >{saving ? '저장 중...' : '저장'}</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {row.instructions && (
+              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
+                지시: {row.instructions}
+              </div>
+            )}
+            <div style={{ fontWeight: 600, color: row.result ? '#1e293b' : '#94a3b8' }}>
+              {row.result || <span style={{ fontStyle: 'italic', fontWeight: 400 }}>미입력</span>}
+            </div>
+            {/* 행 관리 버튼 — 이미지 캡처·PDF 인쇄 시 숨김(no-print) */}
+            <div className="no-print" style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+              {row.hidden ? (
+                <button onClick={() => onUnhide(row)} style={cmtBtn('#eef2ff', '#4361ee')}>
+                  <i className="fas fa-eye" style={{ fontSize: 10 }} /> 리포트에 복원
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => setEditing(true)} style={cmtBtn('#eef2ff', '#4361ee')}>
+                    <i className="fas fa-pen" style={{ fontSize: 10 }} /> 수정
+                  </button>
+                  <button onClick={() => onHide(row)} style={cmtBtn('#fef2f2', '#ef4444')}>
+                    <i className="fas fa-eye-slash" style={{ fontSize: 10 }} /> 숨기기
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -761,6 +899,11 @@ function cmtBtn(bg, color) {
     fontSize: 11, fontWeight: 600, cursor: 'pointer',
   };
 }
+const rowEditInput = {
+  width: '100%', boxSizing: 'border-box',
+  padding: '5px 8px', border: '1.5px solid #4361ee', borderRadius: 6,
+  fontSize: 12, fontFamily: 'inherit', outline: 'none',
+};
 const th = {
   padding: '9px 12px', textAlign: 'center',
   fontWeight: 600, color: '#475569',

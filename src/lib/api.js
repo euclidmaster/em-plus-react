@@ -1197,6 +1197,7 @@ export async function getClinicReportData(studentId, yearMonth) {
     const session = sessionMap[item.session_id] ?? null;
     const itemReplies = repliesByItem[item.id] ?? [];
     const baseRow = {
+      itemId: item.id,
       subject: item.subject ?? '',
       clinic_type: item.clinic_type ?? '',
       instructions: item.instructions ?? '',
@@ -1205,6 +1206,8 @@ export async function getClinicReportData(studentId, yearMonth) {
     if (itemReplies.length === 0) {
       rows.push({
         id: `item-${item.id}`,
+        kind: 'item',
+        replyId: null,
         ...baseRow,
         result: item.result ?? '',
         author: '',
@@ -1213,6 +1216,8 @@ export async function getClinicReportData(studentId, yearMonth) {
       itemReplies.forEach(reply => {
         rows.push({
           id: reply.id,
+          kind: 'reply',
+          replyId: reply.id,
           ...baseRow,
           result: reply.content,
           author: reply.author_name,
@@ -1221,7 +1226,64 @@ export async function getClinicReportData(studentId, yearMonth) {
     }
   });
 
+  // 리포트에서 숨김 처리된 행 표시 (clinic_report_hidden 테이블이 없으면 모두 false)
+  rows.forEach(r => { r.hidden = false; });
+  if (rows.length) {
+    const { data: hiddenData, error: hErr } = await supabase
+      .from('clinic_report_hidden')
+      .select('row_ref')
+      .in('row_ref', rows.map(r => r.id));
+    if (!hErr && hiddenData) {
+      const hiddenSet = new Set(hiddenData.map(h => h.row_ref));
+      rows.forEach(r => { r.hidden = hiddenSet.has(r.id); });
+    }
+  }
+
   return rows.sort((a, b) => (a.session?.session_date ?? '') > (b.session?.session_date ?? '') ? 1 : -1);
+}
+
+/* ─────────── 클리닉 리포트 행 수정 / 숨김 ─────────── */
+// 리포트 한 행의 지시내용·결과 수정
+//   - 지시내용: 항상 clinic_items
+//   - 결과: item 행 → clinic_items.result, reply 행 → clinic_replies.content
+export async function updateClinicReportRow(row, { instructions, result }) {
+  if (instructions !== undefined) {
+    const { error } = await supabase
+      .from('clinic_items')
+      .update({ instructions })
+      .eq('id', row.itemId);
+    if (error) throw error;
+  }
+  if (result !== undefined) {
+    if (row.kind === 'reply') {
+      const { error } = await supabase
+        .from('clinic_replies')
+        .update({ content: result })
+        .eq('id', row.replyId);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('clinic_items')
+        .update({ result })
+        .eq('id', row.itemId);
+      if (error) throw error;
+    }
+  }
+}
+
+// 리포트에서만 숨김 (원본 클리닉 데이터는 보존)
+export async function hideClinicReportRow(rowRef) {
+  const { error } = await supabase
+    .from('clinic_report_hidden')
+    .upsert({ row_ref: rowRef }, { onConflict: 'row_ref' });
+  if (error) throw error;
+}
+export async function unhideClinicReportRow(rowRef) {
+  const { error } = await supabase
+    .from('clinic_report_hidden')
+    .delete()
+    .eq('row_ref', rowRef);
+  if (error) throw error;
 }
 
 /* ─────────── 클리닉 리포트 과목별 코멘트 ─────────── */
