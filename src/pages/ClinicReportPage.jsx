@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import html2canvas from 'html2canvas';
 import { useStudentList } from '../hooks/useStudentList.js';
-import { getClinicReportData, getRoutineMonthlyData } from '../lib/api.js';
+import {
+  getClinicReportData, getRoutineMonthlyData,
+  getClinicReportComments, upsertClinicReportComment, deleteClinicReportComment,
+} from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 
 const SUBJECT_COLORS = {
@@ -29,6 +32,7 @@ export default function ClinicReportPage() {
   const [aiSummary,    setAiSummary]    = useState('');
   const [aiLoading,    setAiLoading]    = useState(false);
   const [capturing,    setCapturing]    = useState(false);
+  const [comments,     setComments]     = useState({});   // { [subject]: { id, comment } }
 
   const reportRef = useRef(null);
 
@@ -46,17 +50,51 @@ export default function ClinicReportPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [clinic, routine] = await Promise.all([
+      const [clinic, routine, cmts] = await Promise.all([
         getClinicReportData(studentId, yearMonth),
         getRoutineMonthlyData(studentId, yearMonth).catch(() => ({ templates: [], logs: [] })),
+        getClinicReportComments(studentId, yearMonth).catch(() => []),
       ]);
       setItems(clinic);
       setRoutineData(routine);
+      const cmtMap = {};
+      cmts.forEach(c => { cmtMap[c.subject] = { id: c.id, comment: c.comment }; });
+      setComments(cmtMap);
     } catch (e) {
       showToast('데이터 로드 실패: ' + e.message, 'error');
       setItems([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  /* 과목별 코멘트 저장(추가/수정) — 실패 시 throw 해서 SubjectSection이 편집 모드 유지 */
+  async function handleSaveComment(subject, text) {
+    try {
+      const saved = await upsertClinicReportComment(studentId, yearMonth, subject, text);
+      setComments(prev => ({ ...prev, [subject]: { id: saved.id, comment: saved.comment } }));
+      showToast('코멘트가 저장되었습니다.');
+    } catch (e) {
+      showToast('코멘트 저장 실패: ' + e.message, 'error');
+      throw e;
+    }
+  }
+
+  /* 과목별 코멘트 삭제 */
+  async function handleDeleteComment(subject) {
+    const c = comments[subject];
+    if (!c?.id) return;
+    if (!window.confirm(`"${subject}" 과목 코멘트를 삭제하시겠습니까?`)) return;
+    try {
+      await deleteClinicReportComment(c.id);
+      setComments(prev => {
+        const next = { ...prev };
+        delete next[subject];
+        return next;
+      });
+      showToast('코멘트가 삭제되었습니다.');
+    } catch (e) {
+      showToast('코멘트 삭제 실패: ' + e.message, 'error');
     }
   }
 
@@ -79,6 +117,8 @@ export default function ClinicReportPage() {
         logging: false,
         windowWidth: el.scrollWidth,
         windowHeight: el.scrollHeight,
+        // 코멘트 추가/수정/삭제 버튼 등 .no-print 요소는 캡처에서 제외
+        ignoreElements: (node) => node.classList?.contains('no-print'),
       });
       const b = await new Promise(res => canvas.toBlob(res, 'image/png'));
       if (!b) throw new Error('이미지 변환 실패');
@@ -291,6 +331,9 @@ export default function ClinicReportPage() {
                       subject={subject}
                       items={subItems}
                       isLast={idx === Object.keys(grouped).length - 1 && routineData.templates.length === 0}
+                      comment={comments[subject] ?? null}
+                      onSaveComment={handleSaveComment}
+                      onDeleteComment={handleDeleteComment}
                     />
                   ))}
                   {routineData.templates.length > 0 && (
@@ -431,8 +474,27 @@ function ReportHeader({ studentName, monthLabel, totalCount }) {
 /* ─────────────────────────────────────────────
    과목 섹션
 ───────────────────────────────────────────── */
-function SubjectSection({ subject, items, isLast }) {
+function SubjectSection({ subject, items, isLast, comment, onSaveComment, onDeleteComment }) {
   const color = getSubjectColor(subject);
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState(comment?.comment ?? '');
+  const [saving,  setSaving]  = useState(false);
+
+  // 외부 comment 변경 시 동기화 (편집 중이 아닐 때만)
+  useEffect(() => { if (!editing) setDraft(comment?.comment ?? ''); }, [comment]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hasComment = !!comment?.comment;
+
+  async function save() {
+    if (!draft.trim()) return;
+    setSaving(true);
+    try {
+      await onSaveComment(subject, draft.trim());
+      setEditing(false);
+    } catch { /* 실패 토스트는 부모가 표시, 편집 모드 유지 */ }
+    finally { setSaving(false); }
+  }
+
   return (
     <div style={{ marginBottom: isLast ? 0 : 28 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -440,10 +502,65 @@ function SubjectSection({ subject, items, isLast }) {
           <div style={{ width: 4, height: 22, background: color, borderRadius: 2 }} />
           <span style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{subject}</span>
         </div>
-        <span style={{ fontSize: 12, fontWeight: 600, color, background: `${color}18`, padding: '3px 10px', borderRadius: 20 }}>
-          {items.length}회
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color, background: `${color}18`, padding: '3px 10px', borderRadius: 20 }}>
+            {items.length}회
+          </span>
+          {/* 코멘트 관리 버튼 — 이미지 캡처·PDF 인쇄 시 숨김(no-print) */}
+          {!editing && (
+            <div className="no-print" style={{ display: 'flex', gap: 4 }}>
+              {hasComment ? (
+                <>
+                  <button onClick={() => { setDraft(comment.comment); setEditing(true); }} style={cmtBtn('#eef2ff', '#4361ee')}>
+                    <i className="fas fa-pen" style={{ fontSize: 10 }} /> 수정
+                  </button>
+                  <button onClick={() => onDeleteComment(subject)} style={cmtBtn('#fef2f2', '#ef4444')}>
+                    <i className="fas fa-trash" style={{ fontSize: 10 }} /> 삭제
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => { setDraft(''); setEditing(true); }} style={cmtBtn('#f0fdf4', '#16a34a')}>
+                  <i className="fas fa-plus" style={{ fontSize: 10 }} /> 코멘트
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* 코멘트 편집 UI — no-print */}
+      {editing && (
+        <div className="no-print" style={{ marginBottom: 12 }}>
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            placeholder={`${subject} 과목 코멘트를 입력하세요.`}
+            rows={2}
+            autoFocus
+            style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', border: `1.5px solid ${color}`, borderRadius: 8, fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }}
+          />
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 6 }}>
+            <button
+              onClick={() => { setEditing(false); setDraft(comment?.comment ?? ''); }}
+              style={{ padding: '5px 14px', border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, fontSize: 12, cursor: 'pointer' }}
+            >취소</button>
+            <button
+              onClick={save}
+              disabled={saving || !draft.trim()}
+              style={{ padding: '5px 14px', border: 'none', background: (saving || !draft.trim()) ? '#cbd5e1' : '#4361ee', color: '#fff', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: (saving || !draft.trim()) ? 'default' : 'pointer' }}
+            >{saving ? '저장 중...' : '저장'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 코멘트 표시 — 캡처·인쇄에 포함 */}
+      {!editing && hasComment && (
+        <div style={{ marginBottom: 12, padding: '10px 14px', background: `${color}0c`, borderLeft: `3px solid ${color}`, borderRadius: '0 8px 8px 0', fontSize: 13, color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+          <span style={{ fontWeight: 700, color, marginRight: 6 }}>코멘트</span>
+          {comment.comment}
+        </div>
+      )}
+
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ background: '#f8fafc' }}>
@@ -636,6 +753,14 @@ const ctrlStyle = {
   padding: '7px 12px', border: '1px solid #e2e8f0',
   borderRadius: 8, fontSize: 14, color: '#1e293b', background: '#fff',
 };
+function cmtBtn(bg, color) {
+  return {
+    display: 'flex', alignItems: 'center', gap: 4,
+    padding: '4px 10px', background: bg, color,
+    border: 'none', borderRadius: 6,
+    fontSize: 11, fontWeight: 600, cursor: 'pointer',
+  };
+}
 const th = {
   padding: '9px 12px', textAlign: 'center',
   fontWeight: 600, color: '#475569',

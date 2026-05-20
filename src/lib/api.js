@@ -1224,6 +1224,39 @@ export async function getClinicReportData(studentId, yearMonth) {
   return rows.sort((a, b) => (a.session?.session_date ?? '') > (b.session?.session_date ?? '') ? 1 : -1);
 }
 
+/* ─────────── 클리닉 리포트 과목별 코멘트 ─────────── */
+// (student_id, year_month, subject) 당 코멘트 1개
+export async function getClinicReportComments(studentId, yearMonth) {
+  const { data, error } = await supabase
+    .from('clinic_report_comments')
+    .select('id, subject, comment')
+    .eq('student_id', studentId)
+    .eq('year_month', yearMonth);
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function upsertClinicReportComment(studentId, yearMonth, subject, comment) {
+  const { data, error } = await supabase
+    .from('clinic_report_comments')
+    .upsert(
+      { student_id: studentId, year_month: yearMonth, subject, comment, updated_at: new Date().toISOString() },
+      { onConflict: 'student_id,year_month,subject' }
+    )
+    .select('id, subject, comment')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteClinicReportComment(id) {
+  const { error } = await supabase
+    .from('clinic_report_comments')
+    .delete()
+    .eq('id', id);
+  if (error) throw error;
+}
+
 function getMondayOfWeek(date) {
   const d = new Date(date);
   const day = d.getDay();
