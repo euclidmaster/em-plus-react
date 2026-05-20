@@ -104,7 +104,14 @@ export default function ClinicReportPage() {
   async function handleEditRow(row, patch) {
     try {
       await updateClinicReportRow(row, patch);
-      setItems(prev => prev.map(r => r.id === row.id ? { ...r, ...patch } : r));
+      setItems(prev => prev.map(r => {
+        if (r.id === row.id) return { ...r, ...patch };
+        // 지시내용은 clinic_items에 저장되므로, 같은 항목의 다른 보고 행도 함께 동기화
+        if (patch.instructions !== undefined && r.itemId === row.itemId) {
+          return { ...r, instructions: patch.instructions };
+        }
+        return r;
+      }));
       showToast('수정되었습니다.');
     } catch (e) {
       showToast('수정 실패: ' + e.message, 'error');
@@ -213,7 +220,7 @@ export default function ClinicReportPage() {
     setAiLoading(true);
     setAiSummary('');
     try {
-      const prompt = buildPrompt(student?.name ?? '학생', monthLabel, items);
+      const prompt = buildPrompt(student?.name ?? '학생', monthLabel, visibleItems);
       const res = await fetch('/api/summarize', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
