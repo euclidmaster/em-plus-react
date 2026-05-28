@@ -33,9 +33,6 @@ const btnSecondary = {
 };
 
 export default function SubjectGuidePage() {
-  // 'school-first': 학생 정보 → 대학·학과 선택 → 결과
-  // 'major-first':  대학·학과 선택 → 학생 정보 → 결과
-  const [mode, setMode] = useState('school-first');
   const [step, setStep] = useState(1);
   const [school, setSchool]   = useState('');
   const [grade, setGrade]     = useState('');
@@ -43,28 +40,25 @@ export default function SubjectGuidePage() {
   const [univ, setUniv]       = useState('');
   const [dept, setDept]       = useState('');
 
-  function validateSchoolGrade() {
-    if (!school || !grade) { alert('학교와 학년을 선택해 주세요.'); return false; }
-    return true;
-  }
-  function validateUnivDept() {
-    if (!univ || !dept) { alert('대학과 모집단위(학과)를 선택해 주세요.'); return false; }
-    return true;
-  }
-  function goToStep2() {
-    const ok = mode === 'school-first' ? validateSchoolGrade() : validateUnivDept();
-    if (ok) setStep(2);
-  }
-  function goToStep3() {
-    const ok = mode === 'school-first' ? validateUnivDept() : validateSchoolGrade();
-    if (ok) setStep(3);
-  }
-  function reset() { setStep(1); setSchool(''); setGrade(''); setName(''); setUniv(''); setDept(''); }
-  function switchMode(m) { if (m === mode) return; setMode(m); setStep(1); }
+  // 2단계(대학·학과 선택) 내부의 탐색 방식
+  //   'univ-first':  대학 → 학과  (기존)
+  //   'major-first': 학과 → 대학  (신규)
+  const [selectMode, setSelectMode] = useState('univ-first');
+  const [category,   setCategory]   = useState('전체');
+  const [search,     setSearch]     = useState('');
 
-  const stepLabels = mode === 'school-first'
-    ? [{ label:'학생 정보' }, { label:'대학·학과 선택' }, { label:'결과 확인' }]
-    : [{ label:'대학·학과 선택' }, { label:'학생 정보' }, { label:'결과 확인' }];
+  function goStep2() {
+    if (!school || !grade) { alert('학교와 학년을 선택해 주세요.'); return; }
+    setStep(2);
+  }
+  function goStep3() {
+    if (!univ || !dept) { alert('대학과 모집단위(학과)를 선택해 주세요.'); return; }
+    setStep(3);
+  }
+  function reset() {
+    setStep(1); setSchool(''); setGrade(''); setName(''); setUniv(''); setDept('');
+    setSelectMode('univ-first'); setCategory('전체'); setSearch('');
+  }
 
   return (
     <div>
@@ -73,25 +67,11 @@ export default function SubjectGuidePage() {
         <p style={{ margin:'4px 0 0', fontSize:13, color:'#64748b' }}>수원시 장안구 고등학교 맞춤형 교과 선택 프로그램</p>
       </div>
 
-      {/* 시작 방식 토글 — 1단계에서만 노출 */}
-      {step === 1 && (
-        <div style={{ display:'flex', justifyContent:'center', marginBottom:18 }}>
-          <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, gap:2 }}>
-            <ModeBtn active={mode==='school-first'} onClick={() => switchMode('school-first')}>
-              <i className="fas fa-school" style={{ fontSize:12 }} /> 학교 먼저
-            </ModeBtn>
-            <ModeBtn active={mode==='major-first'} onClick={() => switchMode('major-first')}>
-              <i className="fas fa-university" style={{ fontSize:12 }} /> 전공 먼저
-            </ModeBtn>
-          </div>
-        </div>
-      )}
-
       {/* 단계 표시 */}
-      <StepIndicator step={step} labels={stepLabels} />
+      <StepIndicator step={step} />
 
-      {/* 학생 정보 입력 폼 — school-first면 step1, major-first면 step2 */}
-      {((mode === 'school-first' && step === 1) || (mode === 'major-first' && step === 2)) && (
+      {/* STEP 1 — 학생 정보 입력 */}
+      {step === 1 && (
         <div className="card" style={{ padding:24 }}>
           <div style={{ fontSize:16, fontWeight:700, color:'#1e293b', marginBottom:20, display:'flex', alignItems:'center', gap:8 }}>
             <i className="fas fa-user-graduate" style={{ color:'#4361ee' }}></i> 학생 정보 입력
@@ -122,81 +102,55 @@ export default function SubjectGuidePage() {
               <input style={inp} type="text" placeholder="이름을 입력하세요" value={name} onChange={e=>setName(e.target.value)} />
             </div>
           </div>
-          <div style={{ display:'flex', justifyContent: step===1 ? 'flex-end' : 'space-between', marginTop:20 }}>
-            {step === 2 && (
-              <button style={btnSecondary} onClick={() => setStep(1)}>
-                <i className="fas fa-arrow-left"></i> 이전
-              </button>
-            )}
-            <button style={btnPrimary} onClick={step===1 ? goToStep2 : goToStep3}>
-              {step === 1 ? <>다음 단계 <i className="fas fa-arrow-right"></i></> : <>결과 확인 <i className="fas fa-search"></i></>}
+          <div style={{ display:'flex', justifyContent:'flex-end', marginTop:20 }}>
+            <button style={btnPrimary} onClick={goStep2}>
+              다음 단계 <i className="fas fa-arrow-right"></i>
             </button>
           </div>
         </div>
       )}
 
-      {/* 대학·학과 선택 폼 — major-first면 step1, school-first면 step2 */}
-      {((mode === 'major-first' && step === 1) || (mode === 'school-first' && step === 2)) && (
+      {/* STEP 2 — 대학·학과 선택 (내부에 두 탐색 방식 탭) */}
+      {step === 2 && (
         <div className="card" style={{ padding:24 }}>
-          <div style={{ fontSize:16, fontWeight:700, color:'#1e293b', marginBottom:6, display:'flex', alignItems:'center', gap:8 }}>
-            <i className="fas fa-university" style={{ color:'#4361ee' }}></i> 희망 대학 · 학과 선택
-          </div>
-          <p style={{ color:'#94a3b8', fontSize:13, marginBottom:16 }}>
-            희망하는 대학을 먼저 선택한 후, 모집단위(학과)를 선택해 주세요.
-          </p>
-
-          {/* 대학 그리드 */}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:8, marginBottom:16 }}>
-            {Object.entries(UNIVERSITIES).map(([name, data]) => (
-              <div key={name}
-                onClick={() => { setUniv(name); setDept(''); }}
-                style={{
-                  padding:'12px 8px', textAlign:'center', borderRadius:10, cursor:'pointer',
-                  border: univ===name ? '2px solid #4361ee' : '1.5px solid #e2e8f0',
-                  background: univ===name ? '#eef2ff' : '#f8fafc',
-                  transition:'all 0.15s',
-                }}>
-                <div style={{ fontSize:14, fontWeight:700, color: univ===name ? '#4361ee' : data.color }}>{data.short}</div>
-                <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{Object.keys(data.departments).length}개 모집단위</div>
+          {/* 헤더 + 탭 */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:12, gap:12, flexWrap:'wrap' }}>
+            <div>
+              <div style={{ fontSize:16, fontWeight:700, color:'#1e293b', display:'flex', alignItems:'center', gap:8 }}>
+                <i className="fas fa-university" style={{ color:'#4361ee' }}></i> 희망 대학 · 학과 선택
               </div>
-            ))}
-          </div>
-
-          {/* 모집단위 선택 */}
-          {univ && (
-            <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:16 }}>
-              <div style={{ fontSize:14, fontWeight:700, color:'#f59e0b', marginBottom:10 }}>
-                {UNIVERSITIES[univ].short} 모집단위 선택
-              </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:6 }}>
-                {Object.entries(UNIVERSITIES[univ].departments).map(([deptName, data]) => (
-                  <div key={deptName}
-                    onClick={() => setDept(deptName)}
-                    style={{
-                      padding:'8px 12px', borderRadius:7, cursor:'pointer', fontSize:13,
-                      border: dept===deptName ? '1.5px solid #4361ee' : '1px solid #e2e8f0',
-                      background: dept===deptName ? '#eef2ff' : '#fff',
-                      color: dept===deptName ? '#4361ee' : '#374151',
-                      fontWeight: dept===deptName ? 600 : 400,
-                      transition:'all 0.15s',
-                    }}>
-                    {deptName}
-                    {data.core.length>0 && <span style={{ color:'#2980B9', fontSize:11, marginLeft:4 }}>📘{data.core.length}</span>}
-                    {data.recommended.length>0 && <span style={{ color:'#27AE60', fontSize:11, marginLeft:2 }}>📗{data.recommended.length}</span>}
-                  </div>
-                ))}
-              </div>
+              <p style={{ color:'#94a3b8', fontSize:13, marginTop:6 }}>
+                {selectMode === 'univ-first'
+                  ? '희망하는 대학을 먼저 선택한 후, 모집단위(학과)를 선택해 주세요.'
+                  : '관심 계열/학과를 먼저 정한 뒤, 해당 모집단위를 운영하는 대학을 선택해 주세요.'}
+              </p>
             </div>
+            <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, gap:2, flexShrink:0 }}>
+              <TabBtn active={selectMode==='univ-first'} onClick={() => setSelectMode('univ-first')}>
+                대학 → 학과
+              </TabBtn>
+              <TabBtn active={selectMode==='major-first'} onClick={() => setSelectMode('major-first')}>
+                학과 → 대학
+              </TabBtn>
+            </div>
+          </div>
+
+          {selectMode === 'univ-first' ? (
+            <UnivFirstView univ={univ} dept={dept} setUniv={setUniv} setDept={setDept} />
+          ) : (
+            <MajorFirstView
+              univ={univ} dept={dept} setUniv={setUniv} setDept={setDept}
+              category={category} setCategory={setCategory}
+              search={search} setSearch={setSearch}
+            />
           )}
 
-          <div style={{ display:'flex', justifyContent: step===1 ? 'flex-end' : 'space-between', marginTop:20 }}>
-            {step === 2 && (
-              <button style={btnSecondary} onClick={() => setStep(1)}>
-                <i className="fas fa-arrow-left"></i> 이전
-              </button>
-            )}
-            <button style={btnPrimary} onClick={step===1 ? goToStep2 : goToStep3}>
-              {step === 1 ? <>다음 단계 <i className="fas fa-arrow-right"></i></> : <>결과 확인 <i className="fas fa-search"></i></>}
+          <div style={{ display:'flex', justifyContent:'space-between', marginTop:20 }}>
+            <button style={btnSecondary} onClick={() => setStep(1)}>
+              <i className="fas fa-arrow-left"></i> 이전
+            </button>
+            <button style={btnPrimary} onClick={goStep3}>
+              결과 확인 <i className="fas fa-search"></i>
             </button>
           </div>
         </div>
@@ -222,25 +176,191 @@ export default function SubjectGuidePage() {
   );
 }
 
-/* ── 모드 토글 버튼 ── */
-function ModeBtn({ active, onClick, children }) {
+/* ── 탭 버튼 (대학→학과 / 학과→대학) ── */
+function TabBtn({ active, onClick, children }) {
   return (
     <button onClick={onClick} style={{
-      padding:'8px 18px', borderRadius:8, border:'none',
+      padding:'7px 14px', borderRadius:8, border:'none',
       background: active ? '#fff' : 'transparent',
       color: active ? '#4361ee' : '#64748b',
-      fontWeight: active ? 700 : 500,
-      fontSize:13, cursor:'pointer',
+      fontWeight: active ? 700 : 500, fontSize:13, cursor:'pointer',
       boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-      display:'inline-flex', alignItems:'center', gap:6,
-      transition:'all 0.15s',
+      whiteSpace:'nowrap', transition:'all 0.15s',
     }}>{children}</button>
   );
 }
 
+/* ── 대학 → 학과 뷰 (기존 흐름) ── */
+function UnivFirstView({ univ, dept, setUniv, setDept }) {
+  return (
+    <>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:8, marginBottom:16 }}>
+        {Object.entries(UNIVERSITIES).map(([name, data]) => (
+          <div key={name}
+            onClick={() => { setUniv(name); setDept(''); }}
+            style={{
+              padding:'12px 8px', textAlign:'center', borderRadius:10, cursor:'pointer',
+              border: univ===name ? '2px solid #4361ee' : '1.5px solid #e2e8f0',
+              background: univ===name ? '#eef2ff' : '#f8fafc',
+              transition:'all 0.15s',
+            }}>
+            <div style={{ fontSize:14, fontWeight:700, color: univ===name ? '#4361ee' : data.color }}>{data.short}</div>
+            <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{Object.keys(data.departments).length}개 모집단위</div>
+          </div>
+        ))}
+      </div>
+
+      {univ && (
+        <div style={{ borderTop:'1px solid #f1f5f9', paddingTop:16 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:'#f59e0b', marginBottom:10 }}>
+            {UNIVERSITIES[univ].short} 모집단위 선택
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:6 }}>
+            {Object.entries(UNIVERSITIES[univ].departments).map(([deptName, data]) => (
+              <div key={deptName}
+                onClick={() => setDept(deptName)}
+                style={{
+                  padding:'8px 12px', borderRadius:7, cursor:'pointer', fontSize:13,
+                  border: dept===deptName ? '1.5px solid #4361ee' : '1px solid #e2e8f0',
+                  background: dept===deptName ? '#eef2ff' : '#fff',
+                  color: dept===deptName ? '#4361ee' : '#374151',
+                  fontWeight: dept===deptName ? 600 : 400,
+                  transition:'all 0.15s',
+                }}>
+                {deptName}
+                {data.core.length>0 && <span style={{ color:'#2980B9', fontSize:11, marginLeft:4 }}>📘{data.core.length}</span>}
+                {data.recommended.length>0 && <span style={{ color:'#27AE60', fontSize:11, marginLeft:2 }}>📗{data.recommended.length}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ── 학과 분류 (키워드 기반) ── */
+const CATEGORIES = [
+  { value:'전체',           keywords:[] },
+  { value:'의예/의학',       keywords:['의예','의학과','의학부','의과대학'] },
+  { value:'치의예',          keywords:['치의예','치의학'] },
+  { value:'한의/한약',       keywords:['한의예','한의학'] },
+  { value:'약학',            keywords:['약학','약대'] },
+  { value:'간호',            keywords:['간호'] },
+  { value:'수의',            keywords:['수의예','수의학','수의과'] },
+  { value:'컴퓨터/SW',       keywords:['컴퓨터','소프트웨어','SW','컴공','컴정'] },
+  { value:'AI/데이터',       keywords:['AI','인공지능','데이터','빅데이터'] },
+  { value:'전자/전기/반도체', keywords:['전자','전기','반도체','정보통신','통신'] },
+  { value:'기계/조선/항공',   keywords:['기계','조선','항공','자동차','로봇'] },
+  { value:'화학/화공/소재',   keywords:['화학','화공','신소재','재료','고분자','나노'] },
+  { value:'생명/바이오',     keywords:['생명','바이오','분자생물','생물'] },
+  { value:'물리/천문/우주',   keywords:['물리','천문','우주'] },
+  { value:'수학/통계',       keywords:['수학','통계'] },
+  { value:'건축/토목/도시',   keywords:['건축','토목','도시','건설','조경'] },
+  { value:'환경/에너지',     keywords:['환경','에너지','자원','지구'] },
+  { value:'경영/경제/통상',   keywords:['경영','경제','통상','금융','회계'] },
+  { value:'사범/교육',       keywords:['교육과','사범'] },
+  { value:'체육/스포츠',     keywords:['체육','스포츠'] },
+  { value:'인문/어문/사회',   keywords:['인문','어문','사회','국문','영문','심리','지리','정치','법학','행정','지리학'] },
+  { value:'예술',            keywords:['예술','미디어','콘텐츠','디자인','음악','미술','의류'] },
+  { value:'산업공학',         keywords:['산업공학','산업경영'] },
+  { value:'식품/영양/식물',   keywords:['식품','영양','식물','농업','농경','원예'] },
+  { value:'사관/경찰',       keywords:['사관','경찰','국방'] },
+];
+function categorize(deptName) {
+  for (const cat of CATEGORIES) {
+    if (cat.value === '전체') continue;
+    if (cat.keywords.some(kw => deptName.includes(kw))) return cat.value;
+  }
+  return '기타';
+}
+
+/* ── 학과 → 대학 뷰 (카테고리·검색·평면 리스트) ── */
+function MajorFirstView({ univ, dept, setUniv, setDept, category, setCategory, search, setSearch }) {
+  // 전체 모집단위를 평면 배열로 펼침
+  const allDepts = [];
+  for (const [univName, univData] of Object.entries(UNIVERSITIES)) {
+    for (const [deptName, deptData] of Object.entries(univData.departments)) {
+      allDepts.push({
+        univ: univName, univShort: univData.short, univColor: univData.color,
+        dept: deptName, core: deptData.core, recommended: deptData.recommended,
+        category: categorize(deptName),
+      });
+    }
+  }
+
+  const q = search.trim().toLowerCase();
+  const filtered = allDepts.filter(d => {
+    if (category !== '전체' && d.category !== category) return false;
+    if (q && !d.dept.toLowerCase().includes(q)
+         && !d.univ.toLowerCase().includes(q)
+         && !d.univShort.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  return (
+    <>
+      {/* 카테고리 칩 */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:12 }}>
+        {CATEGORIES.map(c => (
+          <button key={c.value} onClick={() => setCategory(c.value)} style={{
+            padding:'6px 12px', borderRadius:20, border:'1.5px solid ' + (category===c.value ? '#4361ee' : '#e2e8f0'),
+            background: category===c.value ? '#4361ee' : '#fff',
+            color: category===c.value ? '#fff' : '#475569',
+            fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap',
+          }}>{c.value}</button>
+        ))}
+      </div>
+
+      {/* 검색 */}
+      <div style={{ position:'relative', marginBottom:12 }}>
+        <i className="fas fa-search" style={{ position:'absolute', left:12, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', fontSize:13 }} />
+        <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
+          placeholder="학과/대학명으로 검색 (예: 컴퓨터, 의예, 체육교육, 서울대)"
+          style={{ ...sel, padding:'10px 12px 10px 36px' }} />
+      </div>
+
+      <div style={{ fontSize:12, color:'#64748b', marginBottom:8 }}>총 <strong style={{ color:'#1e293b' }}>{filtered.length}</strong>개 모집단위</div>
+
+      {/* 평면 모집단위 리스트 */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:8, maxHeight:480, overflowY:'auto', padding:'2px' }}>
+        {filtered.map(d => {
+          const selected = univ === d.univ && dept === d.dept;
+          return (
+            <div key={`${d.univ}-${d.dept}`}
+              onClick={() => { setUniv(d.univ); setDept(d.dept); }}
+              style={{
+                padding:'10px 14px', borderRadius:8, cursor:'pointer',
+                border: selected ? '1.5px solid #4361ee' : '1px solid #e2e8f0',
+                background: selected ? '#eef2ff' : '#fff',
+                transition:'all 0.15s',
+              }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontWeight:600, fontSize:13, color: selected ? '#4361ee' : '#1e293b', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{d.dept}</div>
+                  <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{d.univShort}</div>
+                </div>
+                <div style={{ display:'flex', gap:4, flexShrink:0 }}>
+                  {d.core.length>0 && <span style={{ fontSize:10, fontWeight:700, color:'#1d4ed8', background:'#e8f0fe', border:'1px solid #93c5fd', padding:'1px 6px', borderRadius:4 }}>📘 {d.core.length}</span>}
+                  {d.recommended.length>0 && <span style={{ fontSize:10, fontWeight:700, color:'#15803d', background:'#dcfce7', border:'1px solid #86efac', padding:'1px 6px', borderRadius:4 }}>📗 {d.recommended.length}</span>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div style={{ gridColumn:'1/-1', textAlign:'center', padding:40, color:'#94a3b8', fontSize:13 }}>
+            조건에 맞는 모집단위가 없습니다.
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 /* ── 단계 표시기 ── */
-function StepIndicator({ step, labels }) {
-  const steps = labels ?? [{ label:'학생 정보' }, { label:'대학·학과 선택' }, { label:'결과 확인' }];
+function StepIndicator({ step }) {
+  const steps = [{ label:'학생 정보' }, { label:'대학·학과 선택' }, { label:'결과 확인' }];
   return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', marginBottom:24, gap:0 }}>
       {steps.map((s, i) => {
