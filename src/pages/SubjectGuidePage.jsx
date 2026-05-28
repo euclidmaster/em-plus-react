@@ -33,6 +33,9 @@ const btnSecondary = {
 };
 
 export default function SubjectGuidePage() {
+  // 'school-first': 학생 정보 → 대학·학과 선택 → 결과
+  // 'major-first':  대학·학과 선택 → 학생 정보 → 결과
+  const [mode, setMode] = useState('school-first');
   const [step, setStep] = useState(1);
   const [school, setSchool]   = useState('');
   const [grade, setGrade]     = useState('');
@@ -40,15 +43,28 @@ export default function SubjectGuidePage() {
   const [univ, setUniv]       = useState('');
   const [dept, setDept]       = useState('');
 
-  function goStep2() {
-    if (!school || !grade) { alert('학교와 학년을 선택해 주세요.'); return; }
-    setStep(2);
+  function validateSchoolGrade() {
+    if (!school || !grade) { alert('학교와 학년을 선택해 주세요.'); return false; }
+    return true;
   }
-  function goStep3() {
-    if (!univ || !dept) { alert('대학과 모집단위(학과)를 선택해 주세요.'); return; }
-    setStep(3);
+  function validateUnivDept() {
+    if (!univ || !dept) { alert('대학과 모집단위(학과)를 선택해 주세요.'); return false; }
+    return true;
+  }
+  function goToStep2() {
+    const ok = mode === 'school-first' ? validateSchoolGrade() : validateUnivDept();
+    if (ok) setStep(2);
+  }
+  function goToStep3() {
+    const ok = mode === 'school-first' ? validateUnivDept() : validateSchoolGrade();
+    if (ok) setStep(3);
   }
   function reset() { setStep(1); setSchool(''); setGrade(''); setName(''); setUniv(''); setDept(''); }
+  function switchMode(m) { if (m === mode) return; setMode(m); setStep(1); }
+
+  const stepLabels = mode === 'school-first'
+    ? [{ label:'학생 정보' }, { label:'대학·학과 선택' }, { label:'결과 확인' }]
+    : [{ label:'대학·학과 선택' }, { label:'학생 정보' }, { label:'결과 확인' }];
 
   return (
     <div>
@@ -57,11 +73,25 @@ export default function SubjectGuidePage() {
         <p style={{ margin:'4px 0 0', fontSize:13, color:'#64748b' }}>수원시 장안구 고등학교 맞춤형 교과 선택 프로그램</p>
       </div>
 
-      {/* 단계 표시 */}
-      <StepIndicator step={step} />
-
-      {/* STEP 1 */}
+      {/* 시작 방식 토글 — 1단계에서만 노출 */}
       {step === 1 && (
+        <div style={{ display:'flex', justifyContent:'center', marginBottom:18 }}>
+          <div style={{ display:'flex', background:'#f1f5f9', borderRadius:10, padding:4, gap:2 }}>
+            <ModeBtn active={mode==='school-first'} onClick={() => switchMode('school-first')}>
+              <i className="fas fa-school" style={{ fontSize:12 }} /> 학교 먼저
+            </ModeBtn>
+            <ModeBtn active={mode==='major-first'} onClick={() => switchMode('major-first')}>
+              <i className="fas fa-university" style={{ fontSize:12 }} /> 전공 먼저
+            </ModeBtn>
+          </div>
+        </div>
+      )}
+
+      {/* 단계 표시 */}
+      <StepIndicator step={step} labels={stepLabels} />
+
+      {/* 학생 정보 입력 폼 — school-first면 step1, major-first면 step2 */}
+      {((mode === 'school-first' && step === 1) || (mode === 'major-first' && step === 2)) && (
         <div className="card" style={{ padding:24 }}>
           <div style={{ fontSize:16, fontWeight:700, color:'#1e293b', marginBottom:20, display:'flex', alignItems:'center', gap:8 }}>
             <i className="fas fa-user-graduate" style={{ color:'#4361ee' }}></i> 학생 정보 입력
@@ -92,16 +122,21 @@ export default function SubjectGuidePage() {
               <input style={inp} type="text" placeholder="이름을 입력하세요" value={name} onChange={e=>setName(e.target.value)} />
             </div>
           </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', marginTop:20 }}>
-            <button style={btnPrimary} onClick={goStep2}>
-              다음 단계 <i className="fas fa-arrow-right"></i>
+          <div style={{ display:'flex', justifyContent: step===1 ? 'flex-end' : 'space-between', marginTop:20 }}>
+            {step === 2 && (
+              <button style={btnSecondary} onClick={() => setStep(1)}>
+                <i className="fas fa-arrow-left"></i> 이전
+              </button>
+            )}
+            <button style={btnPrimary} onClick={step===1 ? goToStep2 : goToStep3}>
+              {step === 1 ? <>다음 단계 <i className="fas fa-arrow-right"></i></> : <>결과 확인 <i className="fas fa-search"></i></>}
             </button>
           </div>
         </div>
       )}
 
-      {/* STEP 2 */}
-      {step === 2 && (
+      {/* 대학·학과 선택 폼 — major-first면 step1, school-first면 step2 */}
+      {((mode === 'major-first' && step === 1) || (mode === 'school-first' && step === 2)) && (
         <div className="card" style={{ padding:24 }}>
           <div style={{ fontSize:16, fontWeight:700, color:'#1e293b', marginBottom:6, display:'flex', alignItems:'center', gap:8 }}>
             <i className="fas fa-university" style={{ color:'#4361ee' }}></i> 희망 대학 · 학과 선택
@@ -154,12 +189,14 @@ export default function SubjectGuidePage() {
             </div>
           )}
 
-          <div style={{ display:'flex', justifyContent:'space-between', marginTop:20 }}>
-            <button style={btnSecondary} onClick={() => setStep(1)}>
-              <i className="fas fa-arrow-left"></i> 이전
-            </button>
-            <button style={btnPrimary} onClick={goStep3}>
-              결과 확인 <i className="fas fa-search"></i>
+          <div style={{ display:'flex', justifyContent: step===1 ? 'flex-end' : 'space-between', marginTop:20 }}>
+            {step === 2 && (
+              <button style={btnSecondary} onClick={() => setStep(1)}>
+                <i className="fas fa-arrow-left"></i> 이전
+              </button>
+            )}
+            <button style={btnPrimary} onClick={step===1 ? goToStep2 : goToStep3}>
+              {step === 1 ? <>다음 단계 <i className="fas fa-arrow-right"></i></> : <>결과 확인 <i className="fas fa-search"></i></>}
             </button>
           </div>
         </div>
@@ -185,9 +222,25 @@ export default function SubjectGuidePage() {
   );
 }
 
+/* ── 모드 토글 버튼 ── */
+function ModeBtn({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{
+      padding:'8px 18px', borderRadius:8, border:'none',
+      background: active ? '#fff' : 'transparent',
+      color: active ? '#4361ee' : '#64748b',
+      fontWeight: active ? 700 : 500,
+      fontSize:13, cursor:'pointer',
+      boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+      display:'inline-flex', alignItems:'center', gap:6,
+      transition:'all 0.15s',
+    }}>{children}</button>
+  );
+}
+
 /* ── 단계 표시기 ── */
-function StepIndicator({ step }) {
-  const steps = [{ label:'학생 정보' }, { label:'대학·학과 선택' }, { label:'결과 확인' }];
+function StepIndicator({ step, labels }) {
+  const steps = labels ?? [{ label:'학생 정보' }, { label:'대학·학과 선택' }, { label:'결과 확인' }];
   return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', marginBottom:24, gap:0 }}>
       {steps.map((s, i) => {
