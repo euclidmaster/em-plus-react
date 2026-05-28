@@ -106,7 +106,7 @@ body {
 .sidebar-logo {
   display: block;
   width: 100%;
-  max-width: 180px;
+  max-width: 126px;          /* 기존 180px의 70% */
   height: auto;
   margin: 0 auto;
   object-fit: contain;

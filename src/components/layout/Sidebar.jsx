@@ -91,7 +91,7 @@ const Sidebar = memo(function Sidebar({ open, onClose, collapsed, onToggleCollap
         </button>
 
         <div className="sidebar-header">
-          <img src="/logo-light.png" alt="EM플러스학원" className="sidebar-logo" />
+          <img src="/logo-light.png?v=2" alt="EM플러스학원" className="sidebar-logo" />
         </div>
 
         <div className="sidebar-user" onClick={() => { navigate('/profile'); onClose(); }}
