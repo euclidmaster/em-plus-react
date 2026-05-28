@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UNIVERSITIES, SCHOOL_CURRICULUM, getMatchInfo } from '../data/subjectGuideData.js';
+import { UNIVERSITIES, UNIVERSITY_REGIONS, SCHOOL_CURRICULUM, getMatchInfo } from '../data/subjectGuideData.js';
 
 const SCHOOLS = [
   { value:'대평고',    label:'대평고등학교' },
@@ -46,6 +46,7 @@ export default function SubjectGuidePage() {
   const [selectMode, setSelectMode] = useState('univ-first');
   const [category,   setCategory]   = useState('전체');
   const [search,     setSearch]     = useState('');
+  const [region,     setRegion]     = useState('전체');  // 대학→학과 뷰의 지역 필터
 
   function goStep2() {
     if (!school || !grade) { alert('학교와 학년을 선택해 주세요.'); return; }
@@ -57,8 +58,9 @@ export default function SubjectGuidePage() {
   }
   function reset() {
     setStep(1); setSchool(''); setGrade(''); setName(''); setUniv(''); setDept('');
-    setSelectMode('univ-first'); setCategory('전체'); setSearch('');
+    setSelectMode('univ-first'); setCategory('전체'); setSearch(''); setRegion('전체');
   }
+  function switchRegion(r) { setRegion(r); setUniv(''); setDept(''); }
 
   return (
     <div>
@@ -136,7 +138,10 @@ export default function SubjectGuidePage() {
           </div>
 
           {selectMode === 'univ-first' ? (
-            <UnivFirstView univ={univ} dept={dept} setUniv={setUniv} setDept={setDept} />
+            <UnivFirstView
+              univ={univ} dept={dept} setUniv={setUniv} setDept={setDept}
+              region={region} switchRegion={switchRegion}
+            />
           ) : (
             <MajorFirstView
               univ={univ} dept={dept} setUniv={setUniv} setDept={setDept}
@@ -190,12 +195,39 @@ function TabBtn({ active, onClick, children }) {
   );
 }
 
+/* ── 지역 분류 ── */
+const REGIONS = ['전체', '인서울', '수도권', '지방', '과기대'];
+
 /* ── 대학 → 학과 뷰 (기존 흐름) ── */
-function UnivFirstView({ univ, dept, setUniv, setDept }) {
+function UnivFirstView({ univ, dept, setUniv, setDept, region, switchRegion }) {
+  const visibleUnivs = Object.entries(UNIVERSITIES).filter(([name]) => {
+    if (region === '전체') return true;
+    return UNIVERSITY_REGIONS[name] === region;
+  });
   return (
     <>
+      {/* 지역 필터 칩 */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:12 }}>
+        {REGIONS.map(r => {
+          const count = r === '전체'
+            ? Object.keys(UNIVERSITIES).length
+            : Object.keys(UNIVERSITIES).filter(n => UNIVERSITY_REGIONS[n] === r).length;
+          return (
+            <button key={r} onClick={() => switchRegion(r)} style={{
+              padding:'6px 14px', borderRadius:20,
+              border:'1.5px solid ' + (region===r ? '#4361ee' : '#e2e8f0'),
+              background: region===r ? '#4361ee' : '#fff',
+              color: region===r ? '#fff' : '#475569',
+              fontSize:12, fontWeight:600, cursor:'pointer', whiteSpace:'nowrap',
+            }}>
+              {r} <span style={{ opacity:0.75, marginLeft:2 }}>({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))', gap:8, marginBottom:16 }}>
-        {Object.entries(UNIVERSITIES).map(([name, data]) => (
+        {visibleUnivs.map(([name, data]) => (
           <div key={name}
             onClick={() => { setUniv(name); setDept(''); }}
             style={{
@@ -208,6 +240,11 @@ function UnivFirstView({ univ, dept, setUniv, setDept }) {
             <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{Object.keys(data.departments).length}개 모집단위</div>
           </div>
         ))}
+        {visibleUnivs.length === 0 && (
+          <div style={{ gridColumn:'1/-1', textAlign:'center', padding:24, color:'#94a3b8', fontSize:13 }}>
+            해당 지역의 대학이 없습니다.
+          </div>
+        )}
       </div>
 
       {univ && (
