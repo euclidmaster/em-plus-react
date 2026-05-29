@@ -196,7 +196,7 @@ function TabBtn({ active, onClick, children }) {
 }
 
 /* ── 지역 분류 ── */
-const REGIONS = ['전체', '인서울', '수도권', '지거국', '과기대'];
+const REGIONS = ['전체', '인서울', '수도권', '지거국', '과기대', '사관학교'];
 
 /* ── 대학 → 학과 뷰 (기존 흐름) ── */
 function UnivFirstView({ univ, dept, setUniv, setDept, region, switchRegion }) {
