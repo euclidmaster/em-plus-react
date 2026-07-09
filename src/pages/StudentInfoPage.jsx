@@ -175,7 +175,11 @@ export default function StudentInfoPage() {
       setAssignedTeachers(prev => [...prev, row]);
       setAddTeacherId('');
       showToast('담당 강사가 추가되었습니다.');
-    } catch (e) { showToast('추가 실패: ' + e.message, 'error'); }
+    } catch (e) {
+      // 23505 = UNIQUE 제약 위반 (동시 요청으로 이미 배정된 경우)
+      if (e?.code === '23505') showToast('이미 배정된 강사입니다.', 'error');
+      else showToast('추가 실패: ' + e.message, 'error');
+    }
     finally { setSending(false); }
   }
 

@@ -596,7 +596,11 @@ function StudentManageModal({ cls, allStudents, onClose }) {
         student_id: student.id,
         students: { id: student.id, name: student.name, grade: student.grade, class_name: student.class_name, status: student.status, phone: student.phone },
       }]);
-    } catch (e) { showToast('추가 실패: ' + e.message, 'error'); }
+    } catch (e) {
+      // 23505 = UNIQUE 제약 위반 (동시 요청으로 이미 추가된 경우)
+      if (e?.code === '23505') showToast('이미 이 반에 소속된 학생입니다.', 'error');
+      else showToast('추가 실패: ' + e.message, 'error');
+    }
     finally { addingRef.current.delete(student.id); }
   }
   async function handleRemove(linkId) {
