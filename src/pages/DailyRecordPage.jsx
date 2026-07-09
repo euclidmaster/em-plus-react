@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { getDailyRecords, createDailyRecord, updateDailyRecord, deleteDailyRecord } from '../lib/api.js';
+import { useEffect, useRef, useState } from 'react';
+import { getDailyRecords, createDailyRecords, updateDailyRecord, deleteDailyRecord } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -17,15 +17,23 @@ export default function DailyRecordPage() {
   const [drafts, setDrafts]       = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData]   = useState({});
+  const [saving, setSaving]       = useState(false);
   const showToast = useToast();
 
   useEffect(() => {
     if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 학생/날짜를 빠르게 바꿀 때 늦게 도착한 이전 요청이 최신 목록을 덮어쓰지 않도록 가드
+  const loadReqRef = useRef(0);
   async function load() {
-    try { setRecords(await getDailyRecords(selectedId, date)); setDrafts([]); setEditingId(null); }
-    catch { showToast('기록 로드 실패', 'error'); }
+    const reqId = ++loadReqRef.current;
+    try {
+      const data = await getDailyRecords(selectedId, date);
+      if (reqId !== loadReqRef.current) return;
+      setRecords(data); setDrafts([]); setEditingId(null);
+    }
+    catch { if (reqId === loadReqRef.current) showToast('기록 로드 실패', 'error'); }
   }
 
   useEffect(() => { if (selectedId) load(); }, [selectedId, date]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
@@ -39,6 +47,7 @@ export default function DailyRecordPage() {
   }
 
   async function save() {
+    if (saving) return;
     if (!drafts.length) { showToast('저장할 기록이 없습니다.', 'error'); return; }
     if (!selectedId) { showToast('학생을 선택하세요.', 'error'); return; }
     const payloads = drafts.filter(d => d.subject).map(d => ({
@@ -46,11 +55,13 @@ export default function DailyRecordPage() {
       subject: d.subject, material: d.material, study_range: d.study_range,
       study_minutes: parseInt(d.study_minutes) || 0, notes: '',
     }));
+    setSaving(true);
     try {
-      await Promise.all(payloads.map(p => createDailyRecord(p)));
+      await createDailyRecords(payloads); // 단일 insert = 원자적 저장
       showToast('학습 기록이 저장되었습니다.');
       load();
     } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   function startEdit(record) {
@@ -191,8 +202,8 @@ export default function DailyRecordPage() {
           <i className="fas fa-plus"></i> 과목 추가
         </button>
         {drafts.length > 0 && (
-          <button onClick={save} className="btn-primary">
-            <i className="fas fa-save"></i> 저장
+          <button onClick={save} disabled={saving} className="btn-primary" style={{ opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+            <i className="fas fa-save"></i> {saving ? '저장 중...' : '저장'}
           </button>
         )}
       </div>

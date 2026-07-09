@@ -131,6 +131,13 @@ export async function createDailyRecord(payload) {
   if (error) throw error;
   return data;
 }
+// 여러 기록을 한 번의 insert로 원자적으로 저장 (일부만 저장되는 partial-write 방지)
+export async function createDailyRecords(rows) {
+  if (!rows.length) return [];
+  const { data, error } = await supabase.from('daily_records').insert(rows).select();
+  if (error) throw error;
+  return data ?? [];
+}
 export async function updateDailyRecord(id, payload) {
   const { data, error } = await supabase.from('daily_records').update(payload).eq('id', id).select().single();
   if (error) throw error;
@@ -341,16 +348,18 @@ export async function setStudentClasses(studentId, classIds) {
   const toAdd    = [...next].filter(id => !currentIds.has(id));
   const toRemove = current.filter(c => !next.has(c.class_id));
 
+  // 추가를 먼저 수행: insert가 실패하면 아무것도 삭제하지 않고 throw하므로
+  // 기존 소속이 유실되는 partial-write를 방지한다. (add/remove 대상은 서로소라 중복 없음)
+  if (toAdd.length > 0) {
+    const rows = toAdd.map(class_id => ({ student_id: studentId, class_id }));
+    const { error } = await supabase.from('student_classes').insert(rows);
+    if (error) throw error;
+  }
   if (toRemove.length > 0) {
     const { error } = await supabase
       .from('student_classes')
       .delete()
       .in('id', toRemove.map(r => r.id));
-    if (error) throw error;
-  }
-  if (toAdd.length > 0) {
-    const rows = toAdd.map(class_id => ({ student_id: studentId, class_id }));
-    const { error } = await supabase.from('student_classes').insert(rows);
     if (error) throw error;
   }
   return getStudentClasses(studentId);
@@ -557,13 +566,19 @@ export async function updatePerformance(id, payload) {
   const { sessions, performance_sessions, ...perfData } = payload;
   const { data: perf, error } = await supabase.from('performances').update(perfData).eq('id', id).select().single();
   if (error) throw error;
-  await supabase.from('performance_sessions').delete().eq('performance_id', id);
+  // 세션 교체(delete→insert)는 트랜잭션이 아니므로 각 단계 오류를 반드시 표면화한다.
+  // 특히 insert 오류를 무시하면 기존 세션만 삭제된 채로 저장 성공처럼 보이는 partial-write가 발생한다.
+  const { error: delErr } = await supabase.from('performance_sessions').delete().eq('performance_id', id);
+  if (delErr) throw delErr;
   const src = sessions ?? performance_sessions ?? [];
   if (src.length) {
     const rows = src
       .filter(s => s.eval_date || s.eval_types?.length || s.is_done)
       .map(s => ({ performance_id: id, session_no: s.session_no, eval_date: s.eval_date || null, eval_types: s.eval_types ?? [], is_done: s.is_done ?? false }));
-    if (rows.length) await supabase.from('performance_sessions').insert(rows);
+    if (rows.length) {
+      const { error: insErr } = await supabase.from('performance_sessions').insert(rows);
+      if (insErr) throw insErr;
+    }
   }
   return perf;
 }

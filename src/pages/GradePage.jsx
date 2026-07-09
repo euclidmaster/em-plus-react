@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getGrades, upsertGrade, deleteGrade } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
@@ -19,17 +19,22 @@ export default function GradePage() {
   const [selectedId, setSelectedId] = useState(null);
   const [examType, setExamType]   = useState('mid1');
   const [rows, setRows]           = useState([]);
+  const [saving, setSaving]       = useState(false);
   const showToast = useToast();
 
   useEffect(() => {
     if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 학생/시험 탭을 빠르게 전환할 때 늦게 온 이전 응답이 최신 탭을 덮어쓰지 않도록 가드
+  const loadReqRef = useRef(0);
   async function loadGrades() {
+    const reqId = ++loadReqRef.current;
     try {
       const data = await getGrades(selectedId, examType);
+      if (reqId !== loadReqRef.current) return;
       setRows(data.map(g => ({ ...g })));
-    } catch { showToast('성적 로드 실패', 'error'); }
+    } catch { if (reqId === loadReqRef.current) showToast('성적 로드 실패', 'error'); }
   }
 
   useEffect(() => {
@@ -45,14 +50,17 @@ export default function GradePage() {
   }
 
   async function save() {
+    if (saving) return;
     const payloads = rows.filter(r => r.subject).map(r => ({
       ...r, raw_score: r.raw_score !== '' ? parseInt(r.raw_score) : null,
     }));
+    setSaving(true);
     try {
       await Promise.all(payloads.map(p => upsertGrade(p)));
       showToast('성적이 저장되었습니다.');
       loadGrades();
     } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   async function remove(id, idx) {
@@ -130,8 +138,8 @@ export default function GradePage() {
           <button onClick={addRow} style={{ padding:'8px 16px', border:'1.5px solid #4361ee', borderRadius:8, background:'#fff', color:'#4361ee', cursor:'pointer', fontSize:13, fontWeight:600 }}>
             <i className="fas fa-plus"></i> 과목 추가
           </button>
-          <button onClick={save} className="btn-primary">
-            <i className="fas fa-save"></i> 저장
+          <button onClick={save} disabled={saving} className="btn-primary" style={{ opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+            <i className="fas fa-save"></i> {saving ? '저장 중...' : '저장'}
           </button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getGradeStats, getHomeworks } from '../lib/api.js';
 import StudentSelect from '../components/common/StudentSelect.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -18,10 +18,13 @@ export default function ReportPage() {
     if (students.length && selectedId === null) setSelectedId(students[0].id);
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 학생을 빠르게 전환할 때 늦게 온 이전 응답이 최신 학생 데이터를 덮어쓰지 않도록 가드
+  const loadReqRef = useRef(0);
   useEffect(() => {
     if (!selectedId) return;
+    const reqId = ++loadReqRef.current;
     Promise.all([getGradeStats(selectedId), getHomeworks(selectedId)])
-      .then(([g, h]) => { setGradeData(g); setHwData(h); })
+      .then(([g, h]) => { if (reqId === loadReqRef.current) { setGradeData(g); setHwData(h); } })
       .catch(console.error);
   }, [selectedId]);
 

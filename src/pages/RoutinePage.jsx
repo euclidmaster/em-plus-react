@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
 import { useToast } from '../components/common/Toast.jsx';
@@ -47,26 +47,31 @@ export default function RoutinePage() {
     if (students.length && !studentId) setStudentId(students[0].id);
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const loadReqRef = useRef(0);
+  const togglingRef = useRef(new Set()); // 진행 중인 토글의 templateId 집합
+
   useEffect(() => {
     if (studentId) load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId, date]);
 
   async function load() {
+    const reqId = ++loadReqRef.current;
     setLoading(true);
     try {
       const [tmpl, lgArr] = await Promise.all([
         getRoutineTemplates(studentId),
         getRoutineLogs(studentId, date),
       ]);
+      if (reqId !== loadReqRef.current) return; // 학생/날짜가 바뀜 → 이 응답은 폐기
       setTemplates(tmpl);
       const map = {};
       lgArr.forEach(l => { map[l.template_id] = l; });
       setLogs(map);
     } catch (e) {
-      showToast('로드 실패: ' + e.message, 'error');
+      if (reqId === loadReqRef.current) showToast('로드 실패: ' + e.message, 'error');
     } finally {
-      setLoading(false);
+      if (reqId === loadReqRef.current) setLoading(false);
     }
   }
 
@@ -118,6 +123,9 @@ export default function RoutinePage() {
 
   /* ─── 체크 로그 ─── */
   async function toggleLog(templateId) {
+    // 같은 항목의 토글이 진행 중이면 무시 — 연타로 인한 순서 꼬임/중복 INSERT 방지
+    if (togglingRef.current.has(templateId)) return;
+    togglingRef.current.add(templateId);
     const prev = logs[templateId];
     const newDone = !(prev?.is_done ?? false);
     setLogs(lg => ({ ...lg, [templateId]: { ...(lg[templateId] ?? {}), is_done: newDone } }));
@@ -136,6 +144,8 @@ export default function RoutinePage() {
     } catch (e) {
       showToast('저장 실패: ' + e.message, 'error');
       setLogs(lg => ({ ...lg, [templateId]: prev }));
+    } finally {
+      togglingRef.current.delete(templateId);
     }
   }
   async function saveComment(templateId, comment) {

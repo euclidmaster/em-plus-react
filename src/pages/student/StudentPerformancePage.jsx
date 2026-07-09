@@ -38,6 +38,7 @@ export default function StudentPerformancePage() {
   const [filter, setFilter] = useState('전체');
   const [modal, setModal]   = useState(null);
   const [form, setForm]     = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
   const showToast = useToast();
 
   async function load() {
@@ -63,23 +64,29 @@ export default function StudentPerformancePage() {
   }
 
   async function submit() {
+    if (saving) return;
     if (!form.subject.trim()) { showToast('과목명을 입력하세요.', 'error'); return; }
+    setSaving(true);
     try {
       await createPerformance({ ...form, student_id: student.id });
       showToast('수행 기록이 등록되었습니다.');
       setModal(null);
       load();
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   async function submitEdit() {
+    if (saving) return;
     if (!form.subject.trim()) { showToast('과목명을 입력하세요.', 'error'); return; }
+    setSaving(true);
     try {
       await updatePerformance(modal.id, form);
       showToast('수정되었습니다.');
       setModal(null);
       load();
     } catch (e) { showToast('수정 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   async function remove(id) {
@@ -199,8 +206,8 @@ export default function StudentPerformancePage() {
             </div>
             <div style={{ padding:'14px 24px', borderTop:'1px solid #f1f5f9', display:'flex', gap:10, justifyContent:'flex-end', flexShrink:0 }}>
               <button onClick={() => setModal(null)} style={btnCancel}>취소</button>
-              <button onClick={isEdit ? submitEdit : submit} style={btnSave}>
-                <i className="fas fa-save"></i> {isEdit ? '수정 저장' : '저장'}
+              <button onClick={isEdit ? submitEdit : submit} disabled={saving} style={{ ...btnSave, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+                <i className="fas fa-save"></i> {saving ? '저장 중...' : (isEdit ? '수정 저장' : '저장')}
               </button>
             </div>
           </div>

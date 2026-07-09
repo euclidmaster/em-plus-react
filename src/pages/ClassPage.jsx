@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getClasses, createClass, updateClass, deleteClass,
   getClassStudents, addStudentToClass, removeStudentFromClass,
@@ -49,6 +49,7 @@ export default function ClassPage() {
   const [showForm, setShowForm]   = useState(false);
   const [editTarget, setEditTarget] = useState(null); // null = 신규
   const [form, setForm]           = useState(EMPTY_FORM);
+  const [saving, setSaving]       = useState(false);
 
   // 학생 관리 모달
   const [studentMgrFor, setStudentMgrFor] = useState(null); // class 객체
@@ -137,6 +138,7 @@ export default function ClassPage() {
   }
 
   async function save() {
+    if (saving) return;
     if (!form.name.trim()) { showToast('반 이름을 입력하세요.', 'error'); return; }
     const payload = {
       name:        form.name.trim(),
@@ -147,6 +149,7 @@ export default function ClassPage() {
       subject:     form.subject,
       grade:       form.grade,
     };
+    setSaving(true);
     try {
       if (editTarget) {
         const updated = await updateClass(editTarget.id, payload);
@@ -159,6 +162,7 @@ export default function ClassPage() {
       }
       closeForm();
     } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   async function remove(cls) {
@@ -357,8 +361,8 @@ export default function ClassPage() {
           <ClassForm form={form} setForm={setForm} teachers={teachers} />
           <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
             <button onClick={closeForm} style={btnCancel}>취소</button>
-            <button onClick={save} style={btnSave}>
-              <i className="fas fa-save"></i> {editTarget ? '수정' : '생성'}
+            <button onClick={save} disabled={saving} style={{ ...btnSave, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+              <i className="fas fa-save"></i> {saving ? '저장 중...' : (editTarget ? '수정' : '생성')}
             </button>
           </div>
         </Modal>
@@ -580,7 +584,10 @@ function StudentManageModal({ cls, allStudents, onClose }) {
       .slice(0, 60);
   }, [allStudents, memberStudentIds, query]);
 
+  const addingRef = useRef(new Set()); // 추가 진행 중인 student_id — 연타로 인한 중복 삽입 방지
   async function handleAdd(student) {
+    if (memberStudentIds.has(student.id) || addingRef.current.has(student.id)) return;
+    addingRef.current.add(student.id);
     try {
       const row = await addStudentToClass(student.id, cls.id);
       // member 목록에는 students join이 없는 형태로 들어와서 보강
@@ -590,6 +597,7 @@ function StudentManageModal({ cls, allStudents, onClose }) {
         students: { id: student.id, name: student.name, grade: student.grade, class_name: student.class_name, status: student.status, phone: student.phone },
       }]);
     } catch (e) { showToast('추가 실패: ' + e.message, 'error'); }
+    finally { addingRef.current.delete(student.id); }
   }
   async function handleRemove(linkId) {
     try {

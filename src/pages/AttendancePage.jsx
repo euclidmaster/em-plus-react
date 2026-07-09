@@ -24,6 +24,7 @@ export default function AttendancePage() {
   const [form, setForm]               = useState(emptyForm());
   const [editTarget, setEditTarget]   = useState(null);
   const [editForm, setEditForm]       = useState(emptyForm());
+  const [saving, setSaving]           = useState(false);
   const showToast = useToast();
   const { profile } = useAuth();
   const loadReqRef = useRef(0); // race-guard: 최신 요청만 setState 반영
@@ -73,7 +74,9 @@ export default function AttendancePage() {
   }
 
   async function submitAttendance() {
+    if (saving) return;
     if (!selectedId) { showToast('학생을 선택하세요.', 'error'); return; }
+    setSaving(true);
     try {
       await createAttendance({ ...form, student_id: selectedId, reporter_id: form.reporter_id || null });
       showToast('출석이 등록되었습니다.');
@@ -81,6 +84,7 @@ export default function AttendancePage() {
       setForm(emptyForm());
       loadAtt(selectedId);
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   function openEdit(att) {
@@ -99,12 +103,15 @@ export default function AttendancePage() {
   }
 
   async function submitEdit() {
+    if (saving) return;
+    setSaving(true);
     try {
       await updateAttendance(editTarget.id, { ...editForm, reporter_id: editForm.reporter_id || null });
       showToast('수정되었습니다.');
       setEditTarget(null);
       loadAtt(selectedId);
     } catch (e) { showToast('수정 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   async function remove(att) {
@@ -188,7 +195,7 @@ export default function AttendancePage() {
           <AttendanceForm form={form} setForm={setForm} teachers={teachers} />
           <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
             <button onClick={() => setShowModal(false)} style={btnCancel}>취소</button>
-            <button onClick={submitAttendance} style={btnSave}><i className="fas fa-save"></i> 저장</button>
+            <button onClick={submitAttendance} disabled={saving} style={{ ...btnSave, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}><i className="fas fa-save"></i> {saving ? '저장 중...' : '저장'}</button>
           </div>
         </Modal>
       )}
@@ -199,7 +206,7 @@ export default function AttendancePage() {
           <AttendanceForm form={editForm} setForm={setEditForm} teachers={teachers} />
           <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
             <button onClick={() => setEditTarget(null)} style={btnCancel}>취소</button>
-            <button onClick={submitEdit} style={btnSave}><i className="fas fa-save"></i> 저장</button>
+            <button onClick={submitEdit} disabled={saving} style={{ ...btnSave, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}><i className="fas fa-save"></i> {saving ? '저장 중...' : '저장'}</button>
           </div>
         </Modal>
       )}

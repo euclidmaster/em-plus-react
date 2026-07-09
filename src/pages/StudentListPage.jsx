@@ -41,6 +41,7 @@ export default function StudentListPage() {
   const [searchQ, setSearchQ]         = useState('');
   const debouncedQ = useDebounce(searchQ);
   const [showModal, setShowModal]     = useState(false);
+  const [saving, setSaving]           = useState(false);
   const [form, setForm] = useState({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
   const showToast = useToast();
 
@@ -95,6 +96,7 @@ export default function StudentListPage() {
   }
 
   async function submit() {
+    if (saving) return;
     const trimmedName = form.name.trim();
     if (!trimmedName) { showToast('이름을 입력하세요.', 'error'); return; }
 
@@ -112,6 +114,7 @@ export default function StudentListPage() {
       if (!ok) return;
     }
 
+    setSaving(true);
     try {
       const student = await createStudent({ ...form, name: trimmedName, teacher_id: form.teacher_id || null });
       // 담당강사 선택 시 student_teachers 다대다 테이블에도 삽입 (선생님 학생 필터링 대응)
@@ -123,6 +126,7 @@ export default function StudentListPage() {
       setForm({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
       refresh();
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -357,8 +361,8 @@ export default function StudentListPage() {
           </div>
           <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
             <button onClick={() => setShowModal(false)} style={{ padding:'10px 20px', border:'1.5px solid #e2e8f0', borderRadius:8, background:'#fff', cursor:'pointer', fontSize:14 }}>취소</button>
-            <button onClick={submit} style={{ padding:'10px 20px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:14, fontWeight:600 }}>
-              <i className="fas fa-save"></i> 저장
+            <button onClick={submit} disabled={saving} style={{ padding:'10px 20px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor: saving ? 'not-allowed' : 'pointer', fontSize:14, fontWeight:600, opacity: saving ? 0.6 : 1 }}>
+              <i className="fas fa-save"></i> {saving ? '저장 중...' : '저장'}
             </button>
           </div>
         </Modal>

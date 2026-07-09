@@ -31,6 +31,7 @@ export default function StudentInfoPage() {
   const [notes, setNotes]                   = useState([]);
   const [noteInput, setNoteInput]           = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState(new Set());
+  const [sending, setSending]               = useState(false);
   const [editingClassName, setEditingClassName] = useState(false);
   const [classNameValue, setClassNameValue] = useState('');
   const showToast = useToast();
@@ -117,8 +118,10 @@ export default function StudentInfoPage() {
   }
 
   async function submitNote() {
+    if (sending) return; // 중복 전송(연타) 방지 — 모든 수신자에게 두 번 전송되는 것을 막음
     const text = noteInput.trim();
     if (!text || !selectedId) return;
+    setSending(true);
     try {
       if (selectedRecipients.size > 0) {
         if (!profile?.id) { showToast('로그인 정보가 없습니다.', 'error'); return; }
@@ -129,21 +132,29 @@ export default function StudentInfoPage() {
           ...recipientGroups.admins,
         ];
         const targets = allMembers.filter(m => selectedRecipients.has(m.id));
-        await Promise.all(targets.map(to => sendMessage({
+        // allSettled: 일부 수신자 전송이 실패해도 나머지 결과를 잃지 않고 실패자만 보고
+        const results = await Promise.allSettled(targets.map(to => sendMessage({
           from_id:   profile.id,
           to_id:     to.id,
           from_name: profile.name ?? '선생님',
           to_name:   to.name,
           content:   text,
         })));
-        showToast(`${targets.map(t=>t.name).join(', ')}에게 메시지를 보냈습니다.`);
-        setNoteInput('');
+        const failed = targets.filter((_, i) => results[i].status === 'rejected');
+        if (failed.length === 0) {
+          showToast(`${targets.map(t=>t.name).join(', ')}에게 메시지를 보냈습니다.`);
+          setNoteInput('');
+        } else {
+          const sent = targets.filter((_, i) => results[i].status === 'fulfilled');
+          showToast(`일부 전송 실패 — 성공: ${sent.map(t=>t.name).join(', ') || '없음'} / 실패: ${failed.map(t=>t.name).join(', ')}`, 'error');
+        }
       } else {
         const row = await addTeacherNote({ student_id: selectedId, author_name: profile?.name ?? '선생님', content: text });
         setNotes(prev => [...prev, row]);
         setNoteInput('');
       }
     } catch (e) { showToast('전송 실패: ' + e.message, 'error'); }
+    finally { setSending(false); }
   }
 
   async function removeNote(id) {
@@ -154,15 +165,18 @@ export default function StudentInfoPage() {
   }
 
   async function handleAddTeacher() {
+    if (sending) return;
     if (!addTeacherId) return;
     if (assignedTeachers.length >= 10) { showToast('담당 강사는 최대 10명까지 배정 가능합니다.', 'error'); return; }
     if (assignedTeachers.some(a => a.teacher_id === addTeacherId)) { showToast('이미 배정된 강사입니다.', 'error'); return; }
+    setSending(true);
     try {
       const row = await addStudentTeacher(selectedId, addTeacherId);
       setAssignedTeachers(prev => [...prev, row]);
       setAddTeacherId('');
       showToast('담당 강사가 추가되었습니다.');
     } catch (e) { showToast('추가 실패: ' + e.message, 'error'); }
+    finally { setSending(false); }
   }
 
   async function handleRemoveTeacher(id) {
@@ -607,7 +621,8 @@ export default function StudentInfoPage() {
               />
               <button
                 onClick={submitNote}
-                style={{ padding:'9px 16px', background: selectedRecipients.size > 0 ? '#7209b7' : '#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600, flexShrink:0 }}
+                disabled={sending}
+                style={{ padding:'9px 16px', background: selectedRecipients.size > 0 ? '#7209b7' : '#4361ee', color:'#fff', border:'none', borderRadius:8, cursor: sending ? 'not-allowed' : 'pointer', fontSize:13, fontWeight:600, flexShrink:0, opacity: sending ? 0.6 : 1 }}
               >
                 <i className="fas fa-paper-plane"></i>
                 {selectedRecipients.size > 0 && <span style={{ marginLeft:6 }}>{selectedRecipients.size}명 전송</span>}

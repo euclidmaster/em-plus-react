@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getHomeworks, createHomework, toggleHomework, deleteHomework, bulkCreateHomework } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
@@ -44,11 +44,18 @@ function IndividualHomework({ showToast, students }) {
   const [selectedId, setSelectedId] = useState(null);
   const [homeworks, setHomeworks]   = useState([]);
   const [showModal, setShowModal]   = useState(false);
+  const [saving, setSaving]         = useState(false);
   const [form, setForm] = useState({ due_date:'', subject:'국어', material:'', hw_range:'' });
 
+  // 학생을 빠르게 전환할 때 이전 요청이 나중에 도착해 최신 목록을 덮어쓰는 것을 막는 요청 ID 가드
+  const loadReqRef = useRef(0);
   async function loadHw(id) {
-    try { setHomeworks(await getHomeworks(id)); }
-    catch { showToast('숙제 로드 실패', 'error'); }
+    const reqId = ++loadReqRef.current;
+    try {
+      const data = await getHomeworks(id);
+      if (reqId === loadReqRef.current) setHomeworks(data);
+    }
+    catch { if (reqId === loadReqRef.current) showToast('숙제 로드 실패', 'error'); }
   }
 
   useEffect(() => {
@@ -67,8 +74,10 @@ function IndividualHomework({ showToast, students }) {
   }
 
   async function submit() {
+    if (saving) return;
     if (!form.due_date) { showToast('마감일을 입력하세요.', 'error'); return; }
     if (!selectedId)    { showToast('학생을 선택하세요.', 'error'); return; }
+    setSaving(true);
     try {
       await createHomework({ ...form, student_id: selectedId });
       showToast('숙제가 등록되었습니다.');
@@ -76,6 +85,7 @@ function IndividualHomework({ showToast, students }) {
       setForm({ due_date:'', subject:'국어', material:'', hw_range:'' });
       loadHw(selectedId);
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -127,7 +137,7 @@ function IndividualHomework({ showToast, students }) {
           <HomeworkForm form={form} setForm={setForm} />
           <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
             <button onClick={() => setShowModal(false)} style={btnCancel}>취소</button>
-            <button onClick={submit} style={btnSave}><i className="fas fa-save"></i> 저장</button>
+            <button onClick={submit} disabled={saving} style={{ ...btnSave, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}><i className="fas fa-save"></i> {saving ? '저장 중...' : '저장'}</button>
           </div>
         </Modal>
       )}
@@ -141,6 +151,7 @@ function ClassHomework({ showToast, students: allStudents }) {
   const [classFilter, setClassFilter]   = useState('');
   const [classStudents, setClassStudents] = useState([]);
   const [showModal, setShowModal]       = useState(false);
+  const [saving, setSaving]             = useState(false);
   const [form, setForm] = useState({ due_date:'', subject:'국어', material:'', hw_range:'' });
 
   // 선택된 학년의 반 목록
@@ -171,8 +182,10 @@ function ClassHomework({ showToast, students: allStudents }) {
   }
 
   async function submitBulk() {
+    if (saving) return;
     if (!form.due_date) { showToast('마감일을 입력하세요.', 'error'); return; }
     if (classStudents.length === 0) { showToast('학생이 없습니다.', 'error'); return; }
+    setSaving(true);
     try {
       const ids = classStudents.map(s => s.id);
       await bulkCreateHomework(ids, form);
@@ -180,6 +193,7 @@ function ClassHomework({ showToast, students: allStudents }) {
       setShowModal(false);
       setForm({ due_date:'', subject:'국어', material:'', hw_range:'' });
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -267,8 +281,8 @@ function ClassHomework({ showToast, students: allStudents }) {
           <HomeworkForm form={form} setForm={setForm} />
           <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
             <button onClick={() => setShowModal(false)} style={btnCancel}>취소</button>
-            <button onClick={submitBulk} style={btnSave}>
-              <i className="fas fa-save"></i> {classStudents.length}명에게 저장
+            <button onClick={submitBulk} disabled={saving} style={{ ...btnSave, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+              <i className="fas fa-save"></i> {saving ? '저장 중...' : `${classStudents.length}명에게 저장`}
             </button>
           </div>
         </Modal>

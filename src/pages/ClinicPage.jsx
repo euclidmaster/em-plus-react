@@ -47,6 +47,7 @@ export default function ClinicPage() {
   const [myRecord, setMyRecord]       = useState(null);
   const [myRecordLoaded, setMyRecordLoaded] = useState(false);
   const [loading, setLoading]         = useState(true);
+  const [addingSession, setAddingSession] = useState(false);
   const [dbError, setDbError]         = useState(false);
 
   useEffect(() => {
@@ -95,6 +96,8 @@ export default function ClinicPage() {
   }
 
   async function handleAddSession(className = null) {
+    if (addingSession) return; // 연타로 빈 세션이 중복 생성되는 것 방지
+    setAddingSession(true);
     const teacherId   = (role === 'teacher'   && myRecord) ? myRecord.id : null;
     const assistantId = (role === 'assistant' && myRecord) ? myRecord.id : null;
     try {
@@ -164,6 +167,8 @@ export default function ClinicPage() {
       }
     } catch (e) {
       showToast('세션 추가 실패: ' + e.message, 'error');
+    } finally {
+      setAddingSession(false);
     }
   }
 
@@ -401,13 +406,13 @@ export default function ClinicPage() {
               </select>
               <button
                 onClick={() => { if (!pickedClass) return; handleAddSession(pickedClass); setPickedClass(''); }}
-                disabled={!pickedClass}
+                disabled={!pickedClass || addingSession}
                 style={{
                   padding: '7px 14px',
-                  background: pickedClass ? '#7209b7' : '#e2e8f0',
-                  color: pickedClass ? '#fff' : '#94a3b8',
+                  background: (pickedClass && !addingSession) ? '#7209b7' : '#e2e8f0',
+                  color: (pickedClass && !addingSession) ? '#fff' : '#94a3b8',
                   border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  cursor: pickedClass ? 'pointer' : 'default',
+                  cursor: (pickedClass && !addingSession) ? 'pointer' : 'default',
                 }}
               >
                 <i className="fas fa-users" /> 반 추가
@@ -443,9 +448,10 @@ export default function ClinicPage() {
           {canEdit && (
             <button
               onClick={() => handleAddSession()}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              disabled={addingSession}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: '#4361ee', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: addingSession ? 'not-allowed' : 'pointer', opacity: addingSession ? 0.6 : 1 }}
             >
-              <i className="fas fa-plus" /> 세션 추가
+              <i className="fas fa-plus" /> {addingSession ? '추가 중...' : '세션 추가'}
             </button>
           )}
         </div>

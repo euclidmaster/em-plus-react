@@ -10,6 +10,7 @@ export default function StudentChatPage() {
   const { profile } = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText]         = useState('');
+  const [sending, setSending]   = useState(false);
   const [selectedTeacherId, setSelectedTeacherId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText]   = useState('');
@@ -76,8 +77,10 @@ export default function StudentChatPage() {
   }, [messages]);
 
   async function send() {
+    if (sending) return; // 연타/중복 Enter로 같은 메시지가 두 번 전송되는 것 방지
     if (!text.trim()) return;
     if (!teacher?.profile_id) { showToast('담당 선생님이 없습니다.', 'error'); return; }
+    setSending(true);
     try {
       await sendMessage({
         from_id:   profile.id,
@@ -89,6 +92,7 @@ export default function StudentChatPage() {
       setText('');
       load();
     } catch (e) { showToast('전송 실패: ' + e.message, 'error'); }
+    finally { setSending(false); }
   }
 
   function handleKey(e) {
@@ -235,9 +239,9 @@ export default function StudentChatPage() {
                 rows={2}
                 style={{ flex:1, padding:'10px 14px', border:'1.5px solid #e2e8f0', borderRadius:10, fontSize:14, resize:'none', boxSizing:'border-box', fontFamily:'inherit', lineHeight:1.5 }}
               />
-              <button onClick={send} style={{
+              <button onClick={send} disabled={sending} style={{
                 padding:'10px 16px', background:'#4361ee', color:'#fff', border:'none', borderRadius:10,
-                cursor:'pointer', fontSize:14, fontWeight:600, flexShrink:0, alignSelf:'flex-end',
+                cursor: sending ? 'not-allowed' : 'pointer', fontSize:14, fontWeight:600, flexShrink:0, alignSelf:'flex-end', opacity: sending ? 0.6 : 1,
               }}>
                 <i className="fas fa-paper-plane"></i>
               </button>

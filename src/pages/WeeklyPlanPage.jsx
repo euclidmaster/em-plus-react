@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getWeeklyPlans, upsertWeeklyPlan, deleteWeeklyPlan } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
@@ -14,15 +14,22 @@ export default function WeeklyPlanPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
   const [plans, setPlans]         = useState([]);
+  const [saving, setSaving]       = useState(false);
   const showToast = useToast();
 
   useEffect(() => {
     if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 학생/주차를 빠르게 바꿀 때 늦게 온 이전 응답이 최신 화면을 덮어쓰지 않도록 가드
+  const loadReqRef = useRef(0);
   async function load() {
-    try { setPlans(await getWeeklyPlans(selectedId, weekStart)); }
-    catch { showToast('플랜 로드 실패', 'error'); }
+    const reqId = ++loadReqRef.current;
+    try {
+      const data = await getWeeklyPlans(selectedId, weekStart);
+      if (reqId === loadReqRef.current) setPlans(data);
+    }
+    catch { if (reqId === loadReqRef.current) showToast('플랜 로드 실패', 'error'); }
   }
 
   useEffect(() => {
@@ -53,12 +60,15 @@ export default function WeeklyPlanPage() {
   }
 
   async function save() {
+    if (saving) return;
     const payloads = plans.filter(p => p.subject && selectedId).map(p => ({ ...p, week_label: weekStart }));
+    setSaving(true);
     try {
       await Promise.all(payloads.map(p => upsertWeeklyPlan(p)));
       showToast('주간 플랜이 저장되었습니다.');
       load();
     } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -124,8 +134,8 @@ export default function WeeklyPlanPage() {
 
       {plans.length > 0 && (
         <div style={{ marginTop:20 }}>
-          <button onClick={save} className="btn-primary">
-            <i className="fas fa-save"></i> 전체 저장
+          <button onClick={save} disabled={saving} className="btn-primary" style={{ opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+            <i className="fas fa-save"></i> {saving ? '저장 중...' : '전체 저장'}
           </button>
         </div>
       )}

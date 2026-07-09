@@ -33,6 +33,7 @@ export default function TeacherPage() {
   const [teacherForm, setTeacherForm]   = useState({ name:'', title:'', role:'teacher' });
   const [editTarget, setEditTarget]     = useState(null);
   const [editForm, setEditForm]         = useState({ name:'', title:'', role:'teacher' });
+  const [saving, setSaving]             = useState(false);
   const showToast = useToast();
   const { profile } = useAuth();
 
@@ -52,7 +53,9 @@ export default function TeacherPage() {
   }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submitTeacher() {
+    if (saving) return;
     if (!teacherForm.name.trim()) { showToast('이름을 입력하세요.', 'error'); return; }
+    setSaving(true);
     try {
       await createTeacher(teacherForm);
       showToast(`${teacherForm.name} 선생님이 등록되었습니다.`);
@@ -60,6 +63,7 @@ export default function TeacherPage() {
       setTeacherForm({ name:'', title:'', role:'teacher' });
       load();
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   function openEdit(t) {
@@ -69,13 +73,16 @@ export default function TeacherPage() {
   }
 
   async function submitEdit() {
+    if (saving) return;
     if (!editForm.name.trim()) { showToast('이름을 입력하세요.', 'error'); return; }
+    setSaving(true);
     try {
       await updateTeacher(editTarget.id, editForm);
       showToast('수정되었습니다.');
       setShowEditModal(false);
       load();
     } catch (e) { showToast('수정 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   async function remove(t) {
@@ -98,18 +105,23 @@ export default function TeacherPage() {
   }
 
   async function submitPerm() {
+    if (saving) return;
+    setSaving(true);
     try {
       const saved = await upsertTeacherPermission(permTarget.id, permForm);
       setPermissions(prev => ({ ...prev, [permTarget.id]: saved }));
       showToast(`${permTarget.name} 선생님 권한이 저장되었습니다.`);
       setShowPermModal(false);
     } catch (e) { showToast('저장 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   async function submitMsg() {
+    if (saving) return;
     if (!msgContent.trim()) { showToast('내용을 입력하세요.', 'error'); return; }
     if (!profile) { showToast('로그인이 필요합니다.', 'error'); return; }
     if (!msgTo?.profile_id) { showToast('이 선생님은 아직 계정 연결이 되지 않아 쪽지를 받을 수 없습니다.', 'error'); return; }
+    setSaving(true);
     try {
       await sendMessage({ from_id: profile.id, to_id: msgTo.profile_id, from_name: profile.name, to_name: msgTo.name, content: msgContent });
       showToast('쪽지가 전송되었습니다.');
@@ -117,6 +129,7 @@ export default function TeacherPage() {
       setMsgContent('');
       if (profile?.id) getMessages(profile.id).then(setMessages);
     } catch (e) { showToast('전송 실패: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -248,7 +261,7 @@ export default function TeacherPage() {
       {showAddModal && (
         <Modal title={<><i className="fas fa-user-plus"></i> 강사 추가</>} onClose={() => setShowAddModal(false)}>
           <TeacherForm form={teacherForm} setForm={setTeacherForm} />
-          <ModalFooter onCancel={() => setShowAddModal(false)} onSave={submitTeacher} />
+          <ModalFooter onCancel={() => setShowAddModal(false)} onSave={submitTeacher} saving={saving} />
         </Modal>
       )}
 
@@ -256,7 +269,7 @@ export default function TeacherPage() {
       {showEditModal && (
         <Modal title={<><i className="fas fa-edit"></i> 강사 수정</>} onClose={() => setShowEditModal(false)}>
           <TeacherForm form={editForm} setForm={setEditForm} />
-          <ModalFooter onCancel={() => setShowEditModal(false)} onSave={submitEdit} />
+          <ModalFooter onCancel={() => setShowEditModal(false)} onSave={submitEdit} saving={saving} />
         </Modal>
       )}
 
@@ -309,7 +322,7 @@ export default function TeacherPage() {
               );
             })}
           </div>
-          <ModalFooter onCancel={() => setShowPermModal(false)} onSave={submitPerm} saveLabel="저장" />
+          <ModalFooter onCancel={() => setShowPermModal(false)} onSave={submitPerm} saveLabel="저장" saving={saving} />
         </Modal>
       )}
 
@@ -320,7 +333,7 @@ export default function TeacherPage() {
           <textarea value={msgContent} onChange={e => setMsgContent(e.target.value)}
             placeholder="쪽지 내용을 입력하세요..." rows={4}
             style={{ width:'100%', padding:'12px 14px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:14, boxSizing:'border-box', resize:'vertical' }} />
-          <ModalFooter onCancel={() => setShowMsgModal(false)} onSave={submitMsg} saveLabel="전송" saveIcon="fa-paper-plane" />
+          <ModalFooter onCancel={() => setShowMsgModal(false)} onSave={submitMsg} saveLabel="전송" saveIcon="fa-paper-plane" saving={saving} />
         </Modal>
       )}
     </div>
@@ -348,12 +361,12 @@ function TeacherForm({ form, setForm }) {
   );
 }
 
-function ModalFooter({ onCancel, onSave, saveLabel = '저장', saveIcon = 'fa-save' }) {
+function ModalFooter({ onCancel, onSave, saveLabel = '저장', saveIcon = 'fa-save', saving = false }) {
   return (
     <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
       <button onClick={onCancel} style={{ padding:'10px 20px', border:'1.5px solid #e2e8f0', borderRadius:8, background:'#fff', cursor:'pointer', fontSize:14 }}>취소</button>
-      <button onClick={onSave}   style={{ padding:'10px 20px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:14, fontWeight:600 }}>
-        <i className={`fas ${saveIcon}`}></i> {saveLabel}
+      <button onClick={onSave} disabled={saving} style={{ padding:'10px 20px', background:'#4361ee', color:'#fff', border:'none', borderRadius:8, cursor: saving ? 'not-allowed' : 'pointer', fontSize:14, fontWeight:600, opacity: saving ? 0.6 : 1 }}>
+        <i className={`fas ${saveIcon}`}></i> {saving ? '처리 중...' : saveLabel}
       </button>
     </div>
   );
