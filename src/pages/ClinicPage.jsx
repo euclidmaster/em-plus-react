@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../components/common/Toast.jsx';
@@ -8,7 +8,7 @@ import {
   getClinicSessions, createClinicSession, updateClinicSession, deleteClinicSession,
   createClinicItem, createClinicItems, updateClinicItem, deleteClinicItem,
   createClinicReply, updateClinicReply, deleteClinicReply,
-  getClassNames, getClinicClassTemplate, saveClinicClassTemplate,
+  getClasses, getClassStudents, getClinicClassTemplate, saveClinicClassTemplate,
 } from '../lib/api.js';
 import { todayLocal } from '../lib/dateUtil.js';
 
@@ -41,8 +41,16 @@ export default function ClinicPage() {
   const [sessions, setSessions]       = useState([]);
   const [teachers, setTeachers]       = useState([]);
   const [students, setStudents]       = useState([]);
-  const [classNames, setClassNames]   = useState([]);
+  const [classes, setClasses]         = useState([]);   // 새 반 시스템 (classes 테이블)
   const [pickedClass, setPickedClass] = useState('');
+
+  // 새 반 목록에서 이름 배열 / 이름→id 매핑 파생
+  const classNames = useMemo(() => classes.map(c => c.name).filter(Boolean), [classes]);
+  const classNameToId = useMemo(() => {
+    const m = {};
+    for (const c of classes) if (c.name && !(c.name in m)) m[c.name] = c.id;
+    return m;
+  }, [classes]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [myRecord, setMyRecord]       = useState(null);
   const [myRecordLoaded, setMyRecordLoaded] = useState(false);
@@ -53,10 +61,10 @@ export default function ClinicPage() {
   useEffect(() => {
     async function init() {
       try {
-        const [t, s, cn] = await Promise.all([getTeachers(), getStudents(), getClassNames().catch(() => [])]);
+        const [t, s, cls] = await Promise.all([getTeachers(), getStudents(), getClasses().catch(() => [])]);
         setTeachers(t ?? []);
         setStudents((s ?? []).filter(st => st.status === '재원중'));
-        setClassNames(cn ?? []);
+        setClasses(cls ?? []);
         if (profile?.id && (role === 'teacher' || role === 'assistant')) {
           const rec = await getTeacherByProfileId(profile.id);
           setMyRecord(rec);
@@ -95,6 +103,47 @@ export default function ClinicPage() {
     }
   }
 
+  // 반 이름으로 자동 명단 행을 만든다: 1순위 저장된 템플릿 → 2순위 새 반 시스템(student_classes) → 폴백 옛 class_name
+  async function buildClassRosterRows(sessionId, className) {
+    const tmpl = await getClinicClassTemplate(className).catch(() => []);
+    if (tmpl.length > 0) {
+      return {
+        source: 'template',
+        rows: tmpl.map((t, i) => ({
+          session_id:   sessionId,
+          student_id:   t.student_id,
+          subject:      t.subject      ?? '',
+          clinic_type:  t.clinic_type  ?? '',
+          instructions: t.instructions ?? '',
+          result:       '',
+          sort_order:   i,
+        })),
+      };
+    }
+    const classId = classNameToId[className];
+    let roster = [];
+    if (classId) {
+      const links = await getClassStudents(classId).catch(() => []);
+      roster = links.map(l => l.students).filter(s => s && s.status === '재원중');
+    }
+    if (roster.length === 0) roster = students.filter(s => s.class_name === className);
+    if (roster.length > 0) {
+      return {
+        source: 'roster',
+        rows: roster.map((s, i) => ({
+          session_id:   sessionId,
+          student_id:   s.id,
+          subject:      '',
+          clinic_type:  '',
+          instructions: '',
+          result:       '',
+          sort_order:   i,
+        })),
+      };
+    }
+    return { source: null, rows: [] };
+  }
+
   async function handleAddSession(className = null) {
     if (addingSession) return; // 연타로 빈 세션이 중복 생성되는 것 방지
     setAddingSession(true);
@@ -108,44 +157,16 @@ export default function ClinicPage() {
         class_name:   className,
       });
 
-      // 반 지정 시 아이템 자동 생성:
-      //   1순위) 저장된 템플릿이 있으면 그 명단/과목/유형/지시사항으로
-      //   2순위) 템플릿 없으면 students.class_name 기반으로 해당 반 학생 전체를 빈 행으로
+      // 반 지정 시 아이템 자동 생성 (buildClassRosterRows: 템플릿 → 새 반 시스템 → 옛 class_name 순)
       let items = [];
       let source = null;       // 'template' | 'roster' | null
       let createFailed = false; // 아이템 INSERT 자체가 실패한 경우 추적
       if (className) {
-        const tmpl = await getClinicClassTemplate(className).catch(() => []);
-        let rows = [];
-        if (tmpl.length > 0) {
-          rows = tmpl.map((t, i) => ({
-            session_id:   newSession.id,
-            student_id:   t.student_id,
-            subject:      t.subject       ?? '',
-            clinic_type:  t.clinic_type   ?? '',
-            instructions: t.instructions  ?? '',
-            result:       '',
-            sort_order:   i,
-          }));
-          source = 'template';
-        } else {
-          const roster = students.filter(s => s.class_name === className);
-          if (roster.length > 0) {
-            rows = roster.map((s, i) => ({
-              session_id:   newSession.id,
-              student_id:   s.id,
-              subject:      '',
-              clinic_type:  '',
-              instructions: '',
-              result:       '',
-              sort_order:   i,
-            }));
-            source = 'roster';
-          }
-        }
-        if (rows.length > 0) {
+        const built = await buildClassRosterRows(newSession.id, className);
+        source = built.source;
+        if (built.rows.length > 0) {
           try {
-            const created = await createClinicItems(rows);
+            const created = await createClinicItems(built.rows);
             items = (created ?? []).map(it => ({ ...it, clinic_replies: [] }));
           } catch (e) {
             createFailed = true;
@@ -192,6 +213,24 @@ export default function ClinicPage() {
       setSessions(prev => prev.map(s =>
         s.id === sessionId ? { ...s, ...updated } : s
       ));
+
+      // 빈 세션에 반을 새로 지정하면 해당 반 명단을 자동으로 채운다 (이미 학생이 있으면 덮어쓰지 않음)
+      if (patch.class_name) {
+        const target = sessions.find(s => s.id === sessionId);
+        if (target && (target.clinic_items?.length ?? 0) === 0) {
+          const built = await buildClassRosterRows(sessionId, patch.class_name);
+          if (built.rows.length > 0) {
+            try {
+              const created = await createClinicItems(built.rows);
+              const newItems = (created ?? []).map(it => ({ ...it, clinic_replies: [] }));
+              setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, clinic_items: newItems } : s));
+              showToast(`${patch.class_name} 반 명단 ${newItems.length}명이 자동 입력되었습니다.`);
+            } catch (e) {
+              showToast(`명단 자동 입력 실패: ${e.message}`, 'error');
+            }
+          }
+        }
+      }
     } catch {
       showToast('업데이트 실패', 'error');
     }
@@ -552,6 +591,7 @@ create index if not exists idx_clinic_class_templates_class_name
       {showTemplateModal && (
         <ClassTemplateModal
           classNames={classNames}
+          classNameToId={classNameToId}
           students={students}
           onClose={() => setShowTemplateModal(false)}
         />
@@ -1232,13 +1272,25 @@ function whiteSelectStyle() {
 /* ─────────────────────────────────────────────
    반 템플릿 관리 모달
 ───────────────────────────────────────────── */
-function ClassTemplateModal({ classNames, students, onClose }) {
+function ClassTemplateModal({ classNames, classNameToId, students, onClose }) {
   const showToast = useToast();
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? '');
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty]   = useState(false);
+  const [classRoster, setClassRoster] = useState([]); // 선택 반의 실제 명단 (student_classes 기준)
+
+  // 선택된 반이 바뀌면 새 반 시스템에서 명단을 불러온다 (out-of-order 방지 가드 포함)
+  useEffect(() => {
+    const id = classNameToId?.[selectedClass];
+    if (!id) { setClassRoster([]); return; }
+    let ignore = false;
+    getClassStudents(id)
+      .then(links => { if (!ignore) setClassRoster(links.map(l => l.students).filter(s => s && s.status === '재원중')); })
+      .catch(() => { if (!ignore) setClassRoster([]); });
+    return () => { ignore = true; };
+  }, [selectedClass, classNameToId]);
 
   useEffect(() => {
     if (!selectedClass) { setItems([]); setDirty(false); return; }
@@ -1293,8 +1345,10 @@ function ClassTemplateModal({ classNames, students, onClose }) {
     }
   }
 
-  // 해당 반에 속한 학생만 선택지로 (없으면 전체 학생)
-  const classStudents = students.filter(s => s.class_name === selectedClass);
+  // 해당 반에 속한 학생만 선택지로: 새 반 시스템(student_classes) 우선, 없으면 옛 class_name, 그래도 없으면 전체
+  const classStudents = classRoster.length > 0
+    ? classRoster
+    : students.filter(s => s.class_name === selectedClass);
   const studentOptions = classStudents.length > 0 ? classStudents : students;
 
   return (
@@ -1305,7 +1359,7 @@ function ClassTemplateModal({ classNames, students, onClose }) {
     >
       {classNames.length === 0 ? (
         <p style={{ textAlign: 'center', color: '#94a3b8', padding: 40, margin: 0 }}>
-          반(class_name)이 지정된 학생이 없습니다.<br />학생 정보에서 반을 먼저 지정해주세요.
+          등록된 반이 없습니다.<br />"반 관리" 페이지에서 반을 먼저 만들어주세요.
         </p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 16, minHeight: 360 }}>
