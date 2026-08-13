@@ -1038,6 +1038,11 @@ export async function deleteClinicItem(id) {
   const { error } = await supabase.from('clinic_items').delete().eq('id', id);
   if (error) throw error;
 }
+// 한 세션의 모든 아이템을 한 번에 삭제 (명단 교체 시 사용 — clinic_replies는 FK cascade로 함께 삭제)
+export async function deleteClinicItemsBySession(sessionId) {
+  const { error } = await supabase.from('clinic_items').delete().eq('session_id', sessionId);
+  if (error) throw error;
+}
 
 // ==================== 클리닉 반 템플릿 ====================
 // 필요한 Supabase SQL (처음 1회 실행):

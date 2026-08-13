@@ -6,7 +6,7 @@ import Modal from '../components/common/Modal.jsx';
 import {
   getTeachers, getStudents, getTeacherByProfileId,
   getClinicSessions, createClinicSession, updateClinicSession, deleteClinicSession,
-  createClinicItem, createClinicItems, updateClinicItem, deleteClinicItem,
+  createClinicItem, createClinicItems, updateClinicItem, deleteClinicItem, deleteClinicItemsBySession,
   createClinicReply, updateClinicReply, deleteClinicReply,
   getClasses, getClassStudents, getClinicClassTemplate, saveClinicClassTemplate,
 } from '../lib/api.js';
@@ -207,30 +207,56 @@ export default function ClinicPage() {
     }
   }
 
+  // 세션 아이템에 실제 입력(과목/클리닉/지시/결과/보고)이 하나라도 있는지
+  function sessionHasInput(items = []) {
+    return items.some(it =>
+      (it.subject      && it.subject.trim()) ||
+      (it.clinic_type  && it.clinic_type.trim()) ||
+      (it.instructions && it.instructions.trim()) ||
+      (it.result       && it.result.trim()) ||
+      (it.clinic_replies?.length > 0)
+    );
+  }
+
+  // 세션 명단을 지정된 반의 명단으로 교체 (기존 아이템 삭제 후 새로 삽입)
+  async function replaceSessionRoster(sessionId, className, needDelete) {
+    const built = await buildClassRosterRows(sessionId, className);
+    if (built.rows.length === 0) {
+      showToast(`${className} 반에 등록된 학생이 없어 기존 명단을 그대로 둡니다.`, 'error');
+      return;
+    }
+    try {
+      if (needDelete) await deleteClinicItemsBySession(sessionId);
+      const created = await createClinicItems(built.rows);
+      const newItems = (created ?? []).map(it => ({ ...it, clinic_replies: [] }));
+      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, clinic_items: newItems } : s));
+      showToast(`${className} 반 명단 ${newItems.length}명으로 ${needDelete ? '교체' : '입력'}되었습니다.`);
+    } catch (e) {
+      showToast(`명단 교체 실패: ${e.message}`, 'error');
+    }
+  }
+
   async function handleUpdateSession(sessionId, patch) {
     try {
-      const updated = await updateClinicSession(sessionId, patch);
-      setSessions(prev => prev.map(s =>
-        s.id === sessionId ? { ...s, ...updated } : s
-      ));
+      const target = sessions.find(s => s.id === sessionId);
+      const existingItems = target?.clinic_items ?? [];
 
-      // 빈 세션에 반을 새로 지정하면 해당 반 명단을 자동으로 채운다 (이미 학생이 있으면 덮어쓰지 않음)
-      if (patch.class_name) {
-        const target = sessions.find(s => s.id === sessionId);
-        if (target && (target.clinic_items?.length ?? 0) === 0) {
-          const built = await buildClassRosterRows(sessionId, patch.class_name);
-          if (built.rows.length > 0) {
-            try {
-              const created = await createClinicItems(built.rows);
-              const newItems = (created ?? []).map(it => ({ ...it, clinic_replies: [] }));
-              setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, clinic_items: newItems } : s));
-              showToast(`${patch.class_name} 반 명단 ${newItems.length}명이 자동 입력되었습니다.`);
-            } catch (e) {
-              showToast(`명단 자동 입력 실패: ${e.message}`, 'error');
-            }
-          }
+      // 반을 새로 지정/변경할 때: 스마트 자동 교체
+      //   - 명단이 비어있으면(입력 전) 바로 새 반 명단으로 교체
+      //   - 이미 입력한 내용이 있으면 확인 후 교체
+      if (patch.class_name && patch.class_name !== target?.class_name) {
+        if (sessionHasInput(existingItems)
+            && !window.confirm(`기존 명단을 "${patch.class_name}" 반 명단으로 교체할까요?\n이 세션에 입력한 내용은 사라집니다.`)) {
+          return; // 사용자가 취소 → 반 변경도 하지 않음 (드롭다운은 원복됨)
         }
+        const updated = await updateClinicSession(sessionId, patch);
+        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, ...updated } : s));
+        await replaceSessionRoster(sessionId, patch.class_name, existingItems.length > 0);
+        return;
       }
+
+      const updated = await updateClinicSession(sessionId, patch);
+      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, ...updated } : s));
     } catch {
       showToast('업데이트 실패', 'error');
     }
