@@ -1,5 +1,6 @@
 # Sensitive files
 계정정보
+.vercel-token
 
 # Environment variables
 .env
