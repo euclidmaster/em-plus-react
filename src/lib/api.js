@@ -390,15 +390,38 @@ export async function linkTeacherProfile(teacherId, profileId) {
   if (error) throw error;
 }
 export async function getStudentsForTeacher(teacherRecordId) {
-  // student_teachers 다대다 테이블에서 담당 학생 ID 수집
+  // 1) student_teachers 다대다 테이블에서 담당 학생 ID 수집
   const { data: links, error: linkErr } = await supabase
     .from('student_teachers')
     .select('student_id')
     .eq('teacher_id', teacherRecordId);
   if (linkErr) console.warn('[getStudentsForTeacher] student_teachers 조회 오류:', linkErr);
-  const junctionIds = (links ?? []).map(l => l.student_id);
 
-  // students.teacher_id(단일 배정) + junction 테이블 배정 모두 포함
+  // 2) 내가 담당인 반(classes.teacher_id)에 속한 학생도 포함 (새 반 시스템)
+  //    → 반에 학생을 넣으면 그 반 담당강사 명단에 자동으로 표시됨
+  let classStudentIds = [];
+  const { data: myClasses, error: clsErr } = await supabase
+    .from('classes')
+    .select('id')
+    .eq('teacher_id', teacherRecordId);
+  if (clsErr) console.warn('[getStudentsForTeacher] classes 조회 오류:', clsErr);
+  const myClassIds = (myClasses ?? []).map(c => c.id);
+  if (myClassIds.length > 0) {
+    const { data: scLinks, error: scErr } = await supabase
+      .from('student_classes')
+      .select('student_id')
+      .in('class_id', myClassIds);
+    if (scErr) console.warn('[getStudentsForTeacher] student_classes 조회 오류:', scErr);
+    classStudentIds = (scLinks ?? []).map(l => l.student_id);
+  }
+
+  // 중복 제거하여 junction ID 집합 구성 (student_teachers + 내 반 학생)
+  const junctionIds = [...new Set([
+    ...(links ?? []).map(l => l.student_id),
+    ...classStudentIds,
+  ])];
+
+  // students.teacher_id(단일 배정) + junction 배정(다중배정·내 반) 모두 포함
   let query = supabase
     .from('students')
     .select('*, teachers(name, title)');
