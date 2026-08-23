@@ -23,6 +23,12 @@ const COLOR_PALETTE = [
   { btnBg: '#fdba74', btnText: '#7c2d12', rowBg: '#fff7ed', border: '#fdba74' },
 ];
 
+// 반 이름 정규화: 대소문자·공백·구분자·글자 순서를 무시하고 같은 반인지 비교하기 위한 키
+// 예) "중2-성민우T" 와 "성민우T-중2" 가 같은 키가 됨
+function normClassKey(s) {
+  return (s ?? '').toLowerCase().replace(/[\s\-().·/_]/g, '').split('').sort().join('');
+}
+
 /* ─────────────────────────────────────────────
    메인 페이지
 ───────────────────────────────────────────── */
@@ -44,13 +50,24 @@ export default function ClinicPage() {
   const [classes, setClasses]         = useState([]);   // 새 반 시스템 (classes 테이블)
   const [pickedClass, setPickedClass] = useState('');
 
-  // 새 반 목록에서 이름 배열 / 이름→id 매핑 파생
-  const classNames = useMemo(() => classes.map(c => c.name).filter(Boolean), [classes]);
+  // 이름→id 매핑 (새 classes 테이블 기준)
   const classNameToId = useMemo(() => {
     const m = {};
     for (const c of classes) if (c.name && !(c.name in m)) m[c.name] = c.id;
     return m;
   }, [classes]);
+
+  // 드롭다운 반 목록 = 새 반(classes) + 새 반에 없는 옛 class_name(학생 텍스트 필드)
+  //   → 두 시스템 중 어느 쪽에만 있는 반이라도 모두 선택 가능
+  const classNames = useMemo(() => {
+    const names = classes.map(c => c.name).filter(Boolean);
+    const newKeys = new Set(names.map(normClassKey));
+    const oldNames = [...new Set(students.map(s => s.class_name).filter(Boolean))];
+    for (const on of oldNames) {
+      if (!newKeys.has(normClassKey(on))) names.push(on);
+    }
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [classes, students]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [myRecord, setMyRecord]       = useState(null);
   const [myRecordLoaded, setMyRecordLoaded] = useState(false);
@@ -126,7 +143,11 @@ export default function ClinicPage() {
       const links = await getClassStudents(classId).catch(() => []);
       roster = links.map(l => l.students).filter(s => s && s.status === '재원중');
     }
-    if (roster.length === 0) roster = students.filter(s => s.class_name === className);
+    // 폴백: 옛 class_name 필드로 매칭 (이름 순서·구분자가 달라도 정규화 키로 비교)
+    if (roster.length === 0) {
+      const key = normClassKey(className);
+      roster = students.filter(s => s.class_name && normClassKey(s.class_name) === key);
+    }
     if (roster.length > 0) {
       return {
         source: 'roster',
@@ -1371,10 +1392,11 @@ function ClassTemplateModal({ classNames, classNameToId, students, onClose }) {
     }
   }
 
-  // 해당 반에 속한 학생만 선택지로: 새 반 시스템(student_classes) 우선, 없으면 옛 class_name, 그래도 없으면 전체
+  // 해당 반에 속한 학생만 선택지로: 새 반 시스템(student_classes) 우선, 없으면 옛 class_name(정규화 매칭), 그래도 없으면 전체
+  const selKey = normClassKey(selectedClass);
   const classStudents = classRoster.length > 0
     ? classRoster
-    : students.filter(s => s.class_name === selectedClass);
+    : students.filter(s => s.class_name && normClassKey(s.class_name) === selKey);
   const studentOptions = classStudents.length > 0 ? classStudents : students;
 
   return (
