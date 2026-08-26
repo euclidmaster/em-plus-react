@@ -8,7 +8,7 @@ import {
   getClinicSessions, createClinicSession, updateClinicSession, deleteClinicSession,
   createClinicItem, createClinicItems, updateClinicItem, deleteClinicItem, deleteClinicItemsBySession,
   createClinicReply, updateClinicReply, deleteClinicReply,
-  getClasses, getClassStudents, getClinicClassTemplate, saveClinicClassTemplate,
+  getClinicClassTemplate, saveClinicClassTemplate,
 } from '../lib/api.js';
 import { todayLocal } from '../lib/dateUtil.js';
 
@@ -47,27 +47,13 @@ export default function ClinicPage() {
   const [sessions, setSessions]       = useState([]);
   const [teachers, setTeachers]       = useState([]);
   const [students, setStudents]       = useState([]);
-  const [classes, setClasses]         = useState([]);   // 새 반 시스템 (classes 테이블)
   const [pickedClass, setPickedClass] = useState('');
 
-  // 이름→id 매핑 (새 classes 테이블 기준)
-  const classNameToId = useMemo(() => {
-    const m = {};
-    for (const c of classes) if (c.name && !(c.name in m)) m[c.name] = c.id;
-    return m;
-  }, [classes]);
-
-  // 드롭다운 반 목록 = 새 반(classes) + 새 반에 없는 옛 class_name(학생 텍스트 필드)
-  //   → 두 시스템 중 어느 쪽에만 있는 반이라도 모두 선택 가능
+  // 반 목록 = 학생들의 실제 반(students.class_name) — 선생님이 관리하는 신뢰 가능한 정보
   const classNames = useMemo(() => {
-    const names = classes.map(c => c.name).filter(Boolean);
-    const newKeys = new Set(names.map(normClassKey));
-    const oldNames = [...new Set(students.map(s => s.class_name).filter(Boolean))];
-    for (const on of oldNames) {
-      if (!newKeys.has(normClassKey(on))) names.push(on);
-    }
-    return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'ko'));
-  }, [classes, students]);
+    const set = new Set(students.map(s => s.class_name).filter(Boolean));
+    return [...set].sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [students]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [myRecord, setMyRecord]       = useState(null);
   const [myRecordLoaded, setMyRecordLoaded] = useState(false);
@@ -78,10 +64,9 @@ export default function ClinicPage() {
   useEffect(() => {
     async function init() {
       try {
-        const [t, s, cls] = await Promise.all([getTeachers(), getStudents(), getClasses().catch(() => [])]);
+        const [t, s] = await Promise.all([getTeachers(), getStudents()]);
         setTeachers(t ?? []);
         setStudents((s ?? []).filter(st => st.status === '재원중'));
-        setClasses(cls ?? []);
         if (profile?.id && (role === 'teacher' || role === 'assistant')) {
           const rec = await getTeacherByProfileId(profile.id);
           setMyRecord(rec);
@@ -137,17 +122,9 @@ export default function ClinicPage() {
         })),
       };
     }
-    const classId = classNameToId[className];
-    let roster = [];
-    if (classId) {
-      const links = await getClassStudents(classId).catch(() => []);
-      roster = links.map(l => l.students).filter(s => s && s.status === '재원중');
-    }
-    // 폴백: 옛 class_name 필드로 매칭 (이름 순서·구분자가 달라도 정규화 키로 비교)
-    if (roster.length === 0) {
-      const key = normClassKey(className);
-      roster = students.filter(s => s.class_name && normClassKey(s.class_name) === key);
-    }
+    // class_name 필드로 명단 구성 (이름 순서·구분자가 달라도 정규화 키로 비교)
+    const key = normClassKey(className);
+    const roster = students.filter(s => s.class_name && normClassKey(s.class_name) === key);
     if (roster.length > 0) {
       return {
         source: 'roster',
@@ -638,7 +615,6 @@ create index if not exists idx_clinic_class_templates_class_name
       {showTemplateModal && (
         <ClassTemplateModal
           classNames={classNames}
-          classNameToId={classNameToId}
           students={students}
           onClose={() => setShowTemplateModal(false)}
         />
@@ -1319,25 +1295,13 @@ function whiteSelectStyle() {
 /* ─────────────────────────────────────────────
    반 템플릿 관리 모달
 ───────────────────────────────────────────── */
-function ClassTemplateModal({ classNames, classNameToId, students, onClose }) {
+function ClassTemplateModal({ classNames, students, onClose }) {
   const showToast = useToast();
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? '');
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty]   = useState(false);
-  const [classRoster, setClassRoster] = useState([]); // 선택 반의 실제 명단 (student_classes 기준)
-
-  // 선택된 반이 바뀌면 새 반 시스템에서 명단을 불러온다 (out-of-order 방지 가드 포함)
-  useEffect(() => {
-    const id = classNameToId?.[selectedClass];
-    if (!id) { setClassRoster([]); return; }
-    let ignore = false;
-    getClassStudents(id)
-      .then(links => { if (!ignore) setClassRoster(links.map(l => l.students).filter(s => s && s.status === '재원중')); })
-      .catch(() => { if (!ignore) setClassRoster([]); });
-    return () => { ignore = true; };
-  }, [selectedClass, classNameToId]);
 
   useEffect(() => {
     if (!selectedClass) { setItems([]); setDirty(false); return; }
@@ -1392,11 +1356,9 @@ function ClassTemplateModal({ classNames, classNameToId, students, onClose }) {
     }
   }
 
-  // 해당 반에 속한 학생만 선택지로: 새 반 시스템(student_classes) 우선, 없으면 옛 class_name(정규화 매칭), 그래도 없으면 전체
+  // 해당 반에 속한 학생만 선택지로 (class_name 정규화 매칭), 없으면 전체 학생
   const selKey = normClassKey(selectedClass);
-  const classStudents = classRoster.length > 0
-    ? classRoster
-    : students.filter(s => s.class_name && normClassKey(s.class_name) === selKey);
+  const classStudents = students.filter(s => s.class_name && normClassKey(s.class_name) === selKey);
   const studentOptions = classStudents.length > 0 ? classStudents : students;
 
   return (
