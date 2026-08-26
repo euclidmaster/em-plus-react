@@ -30,9 +30,9 @@ export default function TeacherPage() {
   const [permForm, setPermForm]         = useState(DEFAULT_PERMS);
   const [msgTo, setMsgTo]               = useState(null);
   const [msgContent, setMsgContent]     = useState('');
-  const [teacherForm, setTeacherForm]   = useState({ name:'', title:'', role:'teacher' });
+  const [teacherForm, setTeacherForm]   = useState({ name:'', title:'', nickname:'', role:'teacher' });
   const [editTarget, setEditTarget]     = useState(null);
-  const [editForm, setEditForm]         = useState({ name:'', title:'', role:'teacher' });
+  const [editForm, setEditForm]         = useState({ name:'', title:'', nickname:'', role:'teacher' });
   const [saving, setSaving]             = useState(false);
   const showToast = useToast();
   const { profile } = useAuth();
@@ -60,7 +60,7 @@ export default function TeacherPage() {
       await createTeacher(teacherForm);
       showToast(`${teacherForm.name} 선생님이 등록되었습니다.`);
       setShowAddModal(false);
-      setTeacherForm({ name:'', title:'', role:'teacher' });
+      setTeacherForm({ name:'', title:'', nickname:'', role:'teacher' });
       load();
     } catch (e) { showToast('등록 실패: ' + e.message, 'error'); }
     finally { setSaving(false); }
@@ -68,7 +68,7 @@ export default function TeacherPage() {
 
   function openEdit(t) {
     setEditTarget(t);
-    setEditForm({ name: t.name, title: t.title ?? '', role: t.role ?? 'teacher' });
+    setEditForm({ name: t.name, title: t.title ?? '', nickname: t.nickname ?? '', role: t.role ?? 'teacher' });
     setShowEditModal(true);
   }
 
@@ -343,10 +343,10 @@ export default function TeacherPage() {
 function TeacherForm({ form, setForm }) {
   return (
     <div style={{ display:'grid', gap:12 }}>
-      {[{ label:'이름 *', key:'name', ph:'강사 이름' }, { label:'직함', key:'title', ph:'예: 수학 전문강사' }].map(({ label, key, ph }) => (
+      {[{ label:'이름 *', key:'name', ph:'강사 이름 (한글)' }, { label:'별명 (영어명)', key:'nickname', ph:'예: SunnyT, EugeneT — 반 이름에 우선 사용' }, { label:'직함', key:'title', ph:'예: 수학 전문강사' }].map(({ label, key, ph }) => (
         <div key={key}>
           <label style={lbl}>{label}</label>
-          <input type="text" value={form[key]} onChange={e => setForm(f => ({...f, [key]: e.target.value}))}
+          <input type="text" value={form[key] ?? ''} onChange={e => setForm(f => ({...f, [key]: e.target.value}))}
             placeholder={ph} style={inp} />
         </div>
       ))}

@@ -470,17 +470,56 @@ function Chip({ color, children }) {
 }
 
 /* ─────────────────────────────────────────────
+   반 이름 규칙: 학년-과목-선생님(요일)  · 선생님 = 별명 우선, 없으면 한글이름+T
+───────────────────────────────────────────── */
+function teacherLabel(t) {
+  if (!t) return '';
+  return (t.nickname && t.nickname.trim()) ? t.nickname.trim() : `${t.name}T`;
+}
+function buildClassName(grade, subject, tLabel, day) {
+  const core = [grade, subject, tLabel].map(x => (x || '').trim()).filter(Boolean).join('-');
+  const d = (day || '').replace(/[\s.·,/]+/g, '');
+  return core + (d ? `(${d})` : '');
+}
+
+/* ─────────────────────────────────────────────
    반 생성/수정 폼
 ───────────────────────────────────────────── */
 function ClassForm({ form, setForm, teachers }) {
+  const teacher = teachers.find(t => t.id === form.teacher_id);
+  const autoName = buildClassName(form.grade, form.subject, teacherLabel(teacher), form.day_of_week);
+  // 직접입력 여부: 기존 이름이 규칙과 다르면(특수반 등) 직접입력으로 시작
+  const [custom, setCustom] = useState(() => !!form.name && form.name !== autoName);
+
+  // 규칙 모드에선 학년·과목·강사·요일이 바뀔 때 이름을 자동으로 맞춘다
+  useEffect(() => {
+    if (!custom) setForm(f => (f.name === autoName ? f : { ...f, name: autoName }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoName, custom]);
+
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div>
         <label style={lbl}>반 이름 *</label>
-        <input type="text" value={form.name}
-          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-          placeholder="예: 고1-김선생, 고1 (선생님은 나중에 지정 가능)"
-          style={inp} autoFocus />
+        {custom ? (
+          <input type="text" value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            placeholder="특수반 이름 직접 입력 (예: 썸머스쿨)"
+            style={inp} autoFocus />
+        ) : (
+          <input type="text" value={autoName || ''} readOnly
+            placeholder="학년·과목·강사를 고르면 자동 생성됩니다"
+            style={{ ...inp, background: '#f8fafc', color: '#475569', fontWeight: 700 }} />
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+            규칙: <b>학년-과목-선생님(요일)</b> · 별명 우선
+          </span>
+          <label style={{ fontSize: 12, color: '#64748b', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+            <input type="checkbox" checked={custom} onChange={e => setCustom(e.target.checked)} />
+            직접 입력 (특수반)
+          </label>
+        </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div>
@@ -514,7 +553,7 @@ function ClassForm({ form, setForm, teachers }) {
         <label style={lbl}>담당 강사</label>
         <select value={form.teacher_id} onChange={e => setForm(f => ({ ...f, teacher_id: e.target.value }))} style={inp}>
           <option value="">— 미배정 —</option>
-          {teachers.map(t => <option key={t.id} value={t.id}>{t.name}{t.title ? ` (${t.title})` : ''}</option>)}
+          {teachers.map(t => <option key={t.id} value={t.id}>{t.name}{t.nickname ? ` (${t.nickname})` : t.title ? ` (${t.title})` : ''}</option>)}
         </select>
       </div>
       <div>
