@@ -7,6 +7,7 @@ import {
   getStudentTeachers, addStudentTeacher, removeStudentTeacher,
   getTeacherNotes, addTeacherNote, deleteTeacherNote,
   sendMessage,
+  getClasses, getStudentClasses, addStudentToClass, removeStudentFromClass,
 } from '../lib/api.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -28,6 +29,9 @@ export default function StudentInfoPage() {
   const [form, setForm]                     = useState({});
   const [assignedTeachers, setAssignedTeachers] = useState([]);
   const [addTeacherId, setAddTeacherId]     = useState('');
+  const [allClasses, setAllClasses]         = useState([]);
+  const [studentClassList, setStudentClassList] = useState([]);
+  const [addClassId, setAddClassId]         = useState('');
   const [notes, setNotes]                   = useState([]);
   const [noteInput, setNoteInput]           = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState(new Set());
@@ -41,6 +45,7 @@ export default function StudentInfoPage() {
 
   useEffect(() => {
     getTeachers().then(setTeachers).catch(console.error);
+    getClasses().then(setAllClasses).catch(console.error);
   }, []);
 
   async function selectStudent(id) {
@@ -49,16 +54,18 @@ export default function StudentInfoPage() {
     setLinkedProfile(null);
     setLinkTarget('');
     setAddTeacherId('');
+    setAddClassId('');
     setNotes([]);
     setNoteInput('');
     setSelectedRecipients(new Set());
     setSearchParams({ id }, { replace: true });
     try {
-      const [d, assigned, noteList] = await Promise.all([
-        getStudent(id), getStudentTeachers(id), getTeacherNotes(id),
+      const [d, assigned, noteList, classes] = await Promise.all([
+        getStudent(id), getStudentTeachers(id), getTeacherNotes(id), getStudentClasses(id),
       ]);
       setDetail(d);
       setAssignedTeachers(assigned);
+      setStudentClassList(classes);
       setNotes(noteList);
       setForm({ name: d.name, grade: d.grade??'', class_name: d.class_name??'', school_name: d.school_name??'', phone: d.phone??'', status: d.status });
       setClassNameValue(d.class_name ?? '');
@@ -96,7 +103,7 @@ export default function StudentInfoPage() {
     initDone.current = true;
     const urlId = searchParams.get('id');
     const initId = urlId ?? students[0].id;
-    if (initId) selectStudent(initId); // eslint-disable-line react-hooks/set-state-in-effect
+    if (initId) selectStudent(initId);
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleRecipient(id) {
@@ -189,6 +196,31 @@ export default function StudentInfoPage() {
       setAssignedTeachers(prev => prev.filter(a => a.id !== id));
       showToast('담당 강사가 제거되었습니다.');
     } catch (e) { showToast('제거 실패: ' + e.message, 'error'); }
+  }
+
+  async function handleAddClass() {
+    if (sending) return;
+    if (!addClassId) return;
+    if (studentClassList.some(c => c.class_id === addClassId)) { showToast('이미 배정된 반입니다.', 'error'); return; }
+    setSending(true);
+    try {
+      const row = await addStudentToClass(selectedId, addClassId);
+      setStudentClassList(prev => [...prev, row]);
+      setAddClassId('');
+      showToast('수강 반이 추가되었습니다.');
+    } catch (e) {
+      if (e?.code === '23505') showToast('이미 배정된 반입니다.', 'error');
+      else showToast('추가 실패: ' + e.message, 'error');
+    }
+    finally { setSending(false); }
+  }
+
+  async function handleRemoveClass(linkId) {
+    try {
+      await removeStudentFromClass(linkId);
+      setStudentClassList(prev => prev.filter(c => c.id !== linkId));
+      showToast('수강 반에서 제외되었습니다.');
+    } catch (e) { showToast('제외 실패: ' + e.message, 'error'); }
   }
 
   async function save() {
@@ -431,6 +463,64 @@ export default function StudentInfoPage() {
                 <i className="fas fa-exclamation-triangle" style={{ marginRight:4 }}></i>최대 10명까지 배정 가능합니다.
               </p>
             )}
+          </div>
+
+          {/* 수강 반 다중 배정 */}
+          <div className="card">
+            <div className="card-header" style={{ marginBottom:14 }}>
+              <h3><i className="fas fa-users-rectangle"></i> 수강 반
+                <span style={{ marginLeft:10, fontSize:12, fontWeight:400, color:'#94a3b8' }}>
+                  {studentClassList.length}개
+                </span>
+              </h3>
+            </div>
+
+            {studentClassList.length === 0
+              ? <p style={{ fontSize:13, color:'#94a3b8', marginBottom:14 }}>배정된 반이 없습니다. 수학·영어처럼 <b>여러 반에 동시 배정</b>할 수 있습니다.</p>
+              : <div style={{ display:'grid', gap:8, marginBottom:14 }}>
+                  {studentClassList.map(c => (
+                    <div key={c.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', background:'#f8fafc', borderRadius:8, border:'1.5px solid #e2e8f0' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                        <div style={{ width:30, height:30, borderRadius:'50%', background:'#f3e8ff', color:'#7209b7', display:'flex', alignItems:'center', justifyContent:'center', fontSize:13 }}>
+                          <i className="fas fa-users"></i>
+                        </div>
+                        <div>
+                          <span style={{ fontWeight:600, fontSize:14, color:'#1e293b' }}>{c.classes?.name ?? '반'}</span>
+                          {c.classes?.teachers?.name && <span style={{ fontSize:12, color:'#94a3b8', marginLeft:8 }}>{c.classes.teachers.name} 선생님</span>}
+                        </div>
+                      </div>
+                      <button onClick={() => handleRemoveClass(c.id)} style={{ background:'none', border:'none', color:'#ef4444', cursor:'pointer', fontSize:14, padding:'4px 8px', borderRadius:6 }} title="제외">
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+            }
+
+            <div style={{ display:'flex', gap:8 }}>
+              <select
+                value={addClassId}
+                onChange={e => setAddClassId(e.target.value)}
+                style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:14 }}
+              >
+                <option value="">반 선택...</option>
+                {allClasses
+                  .filter(cl => !studentClassList.some(c => c.class_id === cl.id))
+                  .map(cl => <option key={cl.id} value={cl.id}>{cl.name}</option>)
+                }
+              </select>
+              <button
+                onClick={handleAddClass}
+                disabled={!addClassId || sending}
+                style={{ padding:'9px 18px', background: (addClassId && !sending) ? '#7209b7' : '#e2e8f0', color: (addClassId && !sending) ? '#fff' : '#94a3b8', border:'none', borderRadius:8, cursor: (addClassId && !sending) ? 'pointer' : 'default', fontSize:13, fontWeight:600, flexShrink:0 }}
+              >
+                <i className="fas fa-plus"></i> 추가
+              </button>
+            </div>
+            <p style={{ fontSize:11, color:'#94a3b8', marginTop:8 }}>
+              <i className="fas fa-info-circle" style={{ marginRight:4 }}></i>
+              반에 담당강사가 지정돼 있으면, 그 반 선생님 명단에도 자동으로 표시됩니다.
+            </p>
           </div>
 
           {/* 계정 연결 현황 */}
