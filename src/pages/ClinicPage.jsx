@@ -8,7 +8,7 @@ import {
   getClinicSessions, createClinicSession, updateClinicSession, deleteClinicSession,
   createClinicItem, createClinicItems, updateClinicItem, deleteClinicItem, deleteClinicItemsBySession,
   createClinicReply, updateClinicReply, deleteClinicReply,
-  getClinicClassTemplate, saveClinicClassTemplate,
+  getClasses, getClassStudents, getClinicClassTemplate, saveClinicClassTemplate,
 } from '../lib/api.js';
 import { todayLocal } from '../lib/dateUtil.js';
 
@@ -48,12 +48,22 @@ export default function ClinicPage() {
   const [teachers, setTeachers]       = useState([]);
   const [students, setStudents]       = useState([]);
   const [pickedClass, setPickedClass] = useState('');
+  const [classes, setClasses]         = useState([]); // 새 반 시스템 (다대다 명단용)
 
-  // 반 목록 = 학생들의 실제 반(students.class_name) — 선생님이 관리하는 신뢰 가능한 정보
+  // 정규화 이름 → class_id 매핑 (student_classes 명단 조회용)
+  const classKeyToId = useMemo(() => {
+    const m = {};
+    for (const c of classes) if (c.name) { const k = normClassKey(c.name); if (!(k in m)) m[k] = c.id; }
+    return m;
+  }, [classes]);
+
+  // 반 목록 = students.class_name ∪ classes.name (양쪽 시스템의 반 모두 노출, 정규화로 중복 제거)
   const classNames = useMemo(() => {
-    const set = new Set(students.map(s => s.class_name).filter(Boolean));
-    return [...set].sort((a, b) => a.localeCompare(b, 'ko'));
-  }, [students]);
+    const byKey = new Map(); // normKey → 표시이름
+    for (const s of students) if (s.class_name) { const k = normClassKey(s.class_name); if (!byKey.has(k)) byKey.set(k, s.class_name); }
+    for (const c of classes)  if (c.name)       { const k = normClassKey(c.name);       if (!byKey.has(k)) byKey.set(k, c.name); }
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [students, classes]);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [myRecord, setMyRecord]       = useState(null);
   const [myRecordLoaded, setMyRecordLoaded] = useState(false);
@@ -64,9 +74,10 @@ export default function ClinicPage() {
   useEffect(() => {
     async function init() {
       try {
-        const [t, s] = await Promise.all([getTeachers(), getStudents()]);
+        const [t, s, cls] = await Promise.all([getTeachers(), getStudents(), getClasses().catch(() => [])]);
         setTeachers(t ?? []);
         setStudents((s ?? []).filter(st => st.status === '재원중'));
+        setClasses(cls ?? []);
         if (profile?.id && (role === 'teacher' || role === 'assistant')) {
           const rec = await getTeacherByProfileId(profile.id);
           setMyRecord(rec);
@@ -105,7 +116,7 @@ export default function ClinicPage() {
     }
   }
 
-  // 반 이름으로 자동 명단 행을 만든다: 1순위 저장된 템플릿 → 2순위 새 반 시스템(student_classes) → 폴백 옛 class_name
+  // 반 이름으로 자동 명단 행 생성: 1순위 저장 템플릿 → 2순위 class_name ∪ student_classes(수강 반) 합집합
   async function buildClassRosterRows(sessionId, className) {
     const tmpl = await getClinicClassTemplate(className).catch(() => []);
     if (tmpl.length > 0) {
@@ -122,9 +133,20 @@ export default function ClinicPage() {
         })),
       };
     }
-    // class_name 필드로 명단 구성 (이름 순서·구분자가 달라도 정규화 키로 비교)
+    // ① class_name 매칭(정규화) + ② 다대다 student_classes 멤버를 합쳐 중복 제거
     const key = normClassKey(className);
-    const roster = students.filter(s => s.class_name && normClassKey(s.class_name) === key);
+    const byName = students.filter(s => s.class_name && normClassKey(s.class_name) === key);
+    let byClass = [];
+    const classId = classKeyToId[key];
+    if (classId) {
+      const links = await getClassStudents(classId).catch(() => []);
+      byClass = links.map(l => l.students).filter(s => s && s.status === '재원중');
+    }
+    const seen = new Set();
+    const roster = [];
+    for (const s of [...byName, ...byClass]) {
+      if (s && !seen.has(s.id)) { seen.add(s.id); roster.push(s); }
+    }
     if (roster.length > 0) {
       return {
         source: 'roster',
@@ -615,6 +637,7 @@ create index if not exists idx_clinic_class_templates_class_name
       {showTemplateModal && (
         <ClassTemplateModal
           classNames={classNames}
+          classKeyToId={classKeyToId}
           students={students}
           onClose={() => setShowTemplateModal(false)}
         />
@@ -1295,13 +1318,25 @@ function whiteSelectStyle() {
 /* ─────────────────────────────────────────────
    반 템플릿 관리 모달
 ───────────────────────────────────────────── */
-function ClassTemplateModal({ classNames, students, onClose }) {
+function ClassTemplateModal({ classNames, classKeyToId, students, onClose }) {
   const showToast = useToast();
   const [selectedClass, setSelectedClass] = useState(classNames[0] ?? '');
   const [items, setItems]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty]   = useState(false);
+  const [classRoster, setClassRoster] = useState([]); // 선택 반의 student_classes 멤버
+
+  // 선택 반이 바뀌면 student_classes 명단 로드 (out-of-order 가드)
+  useEffect(() => {
+    const id = classKeyToId?.[normClassKey(selectedClass)];
+    if (!id) { setClassRoster([]); return; }
+    let ignore = false;
+    getClassStudents(id)
+      .then(links => { if (!ignore) setClassRoster(links.map(l => l.students).filter(s => s && s.status === '재원중')); })
+      .catch(() => { if (!ignore) setClassRoster([]); });
+    return () => { ignore = true; };
+  }, [selectedClass, classKeyToId]);
 
   useEffect(() => {
     if (!selectedClass) { setItems([]); setDirty(false); return; }
@@ -1356,9 +1391,17 @@ function ClassTemplateModal({ classNames, students, onClose }) {
     }
   }
 
-  // 해당 반에 속한 학생만 선택지로 (class_name 정규화 매칭), 없으면 전체 학생
+  // 해당 반 학생 = class_name 매칭 ∪ student_classes 멤버(수강 반), 없으면 전체 학생
   const selKey = normClassKey(selectedClass);
-  const classStudents = students.filter(s => s.class_name && normClassKey(s.class_name) === selKey);
+  const classStudents = (() => {
+    const byName = students.filter(s => s.class_name && normClassKey(s.class_name) === selKey);
+    const seen = new Set();
+    const out = [];
+    for (const s of [...byName, ...classRoster]) {
+      if (s && !seen.has(s.id)) { seen.add(s.id); out.push(s); }
+    }
+    return out;
+  })();
   const studentOptions = classStudents.length > 0 ? classStudents : students;
 
   return (
