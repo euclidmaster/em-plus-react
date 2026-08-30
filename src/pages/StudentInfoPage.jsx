@@ -13,6 +13,7 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
 import { useToast } from '../components/common/Toast.jsx';
 import StudentSelect from '../components/common/StudentSelect.jsx';
+import ClassPickerModal from '../components/common/ClassPickerModal.jsx';
 
 export default function StudentInfoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -31,7 +32,7 @@ export default function StudentInfoPage() {
   const [addTeacherId, setAddTeacherId]     = useState('');
   const [allClasses, setAllClasses]         = useState([]);
   const [studentClassList, setStudentClassList] = useState([]);
-  const [addClassId, setAddClassId]         = useState('');
+  const [showClassPicker, setShowClassPicker] = useState(false);
   const [notes, setNotes]                   = useState([]);
   const [noteInput, setNoteInput]           = useState('');
   const [selectedRecipients, setSelectedRecipients] = useState(new Set());
@@ -54,7 +55,7 @@ export default function StudentInfoPage() {
     setLinkedProfile(null);
     setLinkTarget('');
     setAddTeacherId('');
-    setAddClassId('');
+    setShowClassPicker(false);
     setNotes([]);
     setNoteInput('');
     setSelectedRecipients(new Set());
@@ -198,15 +199,14 @@ export default function StudentInfoPage() {
     } catch (e) { showToast('제거 실패: ' + e.message, 'error'); }
   }
 
-  async function handleAddClass() {
-    if (sending) return;
-    if (!addClassId) return;
-    if (studentClassList.some(c => c.class_id === addClassId)) { showToast('이미 배정된 반입니다.', 'error'); return; }
+  async function handleAddClass(classId) {
+    if (sending || !classId) return;
+    if (studentClassList.some(c => c.class_id === classId)) { showToast('이미 배정된 반입니다.', 'error'); return; }
     setSending(true);
     try {
-      const row = await addStudentToClass(selectedId, addClassId);
+      const row = await addStudentToClass(selectedId, classId);
       setStudentClassList(prev => [...prev, row]);
-      setAddClassId('');
+      setShowClassPicker(false);
       showToast('수강 반이 추가되었습니다.');
     } catch (e) {
       if (e?.code === '23505') showToast('이미 배정된 반입니다.', 'error');
@@ -497,26 +497,24 @@ export default function StudentInfoPage() {
                 </div>
             }
 
-            <div style={{ display:'flex', gap:8 }}>
-              <select
-                value={addClassId}
-                onChange={e => setAddClassId(e.target.value)}
-                style={{ flex:1, padding:'9px 12px', border:'1.5px solid #e2e8f0', borderRadius:8, fontSize:14 }}
-              >
-                <option value="">반 선택...</option>
-                {allClasses
+            <button
+              onClick={() => setShowClassPicker(true)}
+              disabled={sending}
+              style={{ width:'100%', padding:'10px', background:'#faf5ff', color:'#7209b7', border:'1.5px dashed #d8b4fe', borderRadius:8, cursor: sending ? 'default' : 'pointer', fontSize:13, fontWeight:600 }}
+            >
+              <i className="fas fa-plus"></i> 반 추가 (검색·학년별 선택)
+            </button>
+
+            {showClassPicker && (
+              <ClassPickerModal
+                title="수강 반 추가"
+                items={allClasses
                   .filter(cl => !studentClassList.some(c => c.class_id === cl.id))
-                  .map(cl => <option key={cl.id} value={cl.id}>{cl.name}</option>)
-                }
-              </select>
-              <button
-                onClick={handleAddClass}
-                disabled={!addClassId || sending}
-                style={{ padding:'9px 18px', background: (addClassId && !sending) ? '#7209b7' : '#e2e8f0', color: (addClassId && !sending) ? '#fff' : '#94a3b8', border:'none', borderRadius:8, cursor: (addClassId && !sending) ? 'pointer' : 'default', fontSize:13, fontWeight:600, flexShrink:0 }}
-              >
-                <i className="fas fa-plus"></i> 추가
-              </button>
-            </div>
+                  .map(cl => ({ key: cl.id, label: cl.name, grade: cl.grade }))}
+                onPick={id => handleAddClass(id)}
+                onClose={() => setShowClassPicker(false)}
+              />
+            )}
             <p style={{ fontSize:11, color:'#94a3b8', marginTop:8 }}>
               <i className="fas fa-info-circle" style={{ marginRight:4 }}></i>
               반에 담당강사가 지정돼 있으면, 그 반 선생님 명단에도 자동으로 표시됩니다.

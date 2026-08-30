@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { createStudent, getTeachers, addStudentTeacher, getAllStudentClasses } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
+import ClassPickerModal from '../components/common/ClassPickerModal.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
 import { useDebounce } from '../hooks/useDebounce.js';
 
@@ -41,6 +42,7 @@ export default function StudentListPage() {
   const [searchQ, setSearchQ]         = useState('');
   const debouncedQ = useDebounce(searchQ);
   const [showModal, setShowModal]     = useState(false);
+  const [showClassFilter, setShowClassFilter] = useState(false);
   const [saving, setSaving]           = useState(false);
   const [form, setForm] = useState({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
   const [classMap, setClassMap]       = useState({}); // student_id → [반 이름들] (student_classes)
@@ -210,35 +212,40 @@ export default function StudentListPage() {
         </div>
       </div>
 
-      {/* 반 필터 */}
+      {/* 반 필터 (검색·학년별 모달) */}
       {availableClasses.length > 1 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 8, letterSpacing: '0.05em' }}>반</div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {availableClasses.map(c => {
-              const active = classFilter === c;
-              const base = gradeFilter === '전체' ? statusBase : statusBase.filter(s => normalizeGrade(s.grade) === gradeFilter);
-              const count = c === '전체' ? base.length : base.filter(s => classesOf(s).includes(c)).length;
-              return (
-                <button key={c} onClick={() => setClassFilter(c)} style={{
-                  padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  border: '1.5px solid ' + (active ? '#7209b7' : '#e2e8f0'),
-                  background: active ? '#7209b7' : '#fff',
-                  color: active ? '#fff' : '#475569',
-                  display: 'flex', alignItems: 'center', gap: 5,
-                }}>
-                  {c}
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, minWidth: 16, height: 16, borderRadius: 8,
-                    background: active ? 'rgba(255,255,255,0.3)' : '#f1f5f9',
-                    color: active ? '#fff' : '#64748b',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px',
-                  }}>{count}</span>
-                </button>
-              );
-            })}
-          </div>
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em' }}>반</span>
+          <button onClick={() => setShowClassFilter(true)} style={{
+            padding: '7px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            border: '1.5px solid ' + (classFilter !== '전체' ? '#7209b7' : '#e2e8f0'),
+            background: classFilter !== '전체' ? '#faf5ff' : '#fff',
+            color: classFilter !== '전체' ? '#7209b7' : '#475569',
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+          }}>
+            <i className="fas fa-filter" style={{ fontSize: 11 }} />
+            {classFilter === '전체' ? '반 선택...' : classFilter}
+            <i className="fas fa-chevron-down" style={{ fontSize: 10, color: '#94a3b8' }} />
+          </button>
+          {classFilter !== '전체' && (
+            <button onClick={() => setClassFilter('전체')} style={{ padding: '7px 10px', borderRadius: 8, fontSize: 12, border: '1.5px solid #e2e8f0', background: '#fff', color: '#64748b', cursor: 'pointer' }}>
+              <i className="fas fa-times" /> 초기화
+            </button>
+          )}
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>· {filtered.length}명</span>
         </div>
+      )}
+
+      {showClassFilter && (
+        <ClassPickerModal
+          title="반 필터 선택"
+          items={availableClasses.filter(c => c !== '전체').map(c => ({ key: c, label: c, grade: c.split(/[-\s(]/)[0] }))}
+          currentKey={classFilter === '전체' ? null : classFilter}
+          allowAll
+          allLabel="전체 반 보기"
+          onPick={key => { setClassFilter(key ?? '전체'); setShowClassFilter(false); }}
+          onClose={() => setShowClassFilter(false)}
+        />
       )}
 
       <div className="card">
