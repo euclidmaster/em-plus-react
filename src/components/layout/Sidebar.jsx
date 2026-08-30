@@ -1,6 +1,6 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { useState, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 
 const ADMIN_NAV = [
   { group: '대시보드', icon: 'fa-home', items: [
@@ -57,13 +57,77 @@ const Sidebar = memo(function Sidebar({ open, onClose, collapsed, onToggleCollap
 
   const nav = role === 'student' ? STUDENT_NAV : ADMIN_NAV;
 
-  // 모든 그룹을 기본으로 열린 상태로
+  // 모든 그룹을 기본으로 열린 상태로 (즐겨찾기 포함)
   const getInitialOpen = () => {
-    const set = new Set();
+    const set = new Set(['즐겨찾기']);
     nav.forEach(g => set.add(g.group));
     return set;
   };
   const [openGroups, setOpenGroups] = useState(getInitialOpen);
+
+  // 즐겨찾기 (localStorage 영속화, 역할별)
+  const FAV_KEY = `emplus:favorites:${role}`;
+  const [favorites, setFavorites] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(FAV_KEY) || '[]'); } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(favorites)); } catch { /* ignore */ }
+  }, [favorites, FAV_KEY]);
+
+  function toggleFav(e, to) {
+    e.preventDefault();
+    e.stopPropagation();
+    setFavorites(prev => prev.includes(to) ? prev.filter(x => x !== to) : [...prev, to]);
+  }
+
+  function isVisible(item) {
+    if (item.adminOnly && role !== 'admin') return false;
+    if (item.permission && role === 'teacher' && teacherPermissions) {
+      return teacherPermissions[item.permission] !== false;
+    }
+    return true;
+  }
+
+  // 즐겨찾기된(그리고 현재 보이는) 항목들
+  const favItems = [];
+  const favSeen = new Set();
+  nav.forEach(g => g.items.forEach(it => {
+    if (favorites.includes(it.to) && isVisible(it) && !favSeen.has(it.to)) {
+      favSeen.add(it.to);
+      favItems.push(it);
+    }
+  }));
+
+  function renderItem(item) {
+    const fav = favorites.includes(item.to);
+    return (
+      <div key={item.to} style={{ position: 'relative' }}>
+        <NavLink
+          to={item.to}
+          end={item.to === '/' || item.to === '/my'}
+          className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+          onClick={onClose}
+          style={!collapsed ? { paddingRight: 34 } : undefined}
+        >
+          <i className={`fas ${item.icon}`}></i>
+          <span>{item.label}</span>
+        </NavLink>
+        {!collapsed && (
+          <button
+            onClick={e => toggleFav(e, item.to)}
+            title={fav ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+            style={{
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 5, lineHeight: 1,
+              color: fav ? '#f59e0b' : '#475569', fontSize: 12,
+            }}
+          >
+            <i className="fas fa-star"></i>
+          </button>
+        )}
+      </div>
+    );
+  }
 
   const roleLabel = { admin:'원장', teacher:'강사', assistant:'조교', student:'학생' }[role] ?? role;
   const roleIcon  = { admin:'fa-shield-alt', teacher:'fa-chalkboard-teacher', assistant:'fa-chalkboard-teacher', student:'fa-user-graduate' }[role] ?? 'fa-user';
@@ -111,15 +175,27 @@ const Sidebar = memo(function Sidebar({ open, onClose, collapsed, onToggleCollap
         </div>
 
         <nav className="sidebar-nav">
+          {/* 즐겨찾기 */}
+          {favItems.length > 0 && (
+            <div className="nav-group">
+              <button
+                className="nav-group-toggle"
+                onClick={() => toggleGroup('즐겨찾기')}
+              >
+                <span className="nav-group-toggle-left">
+                  <i className="fas fa-star" style={{ color: '#f59e0b' }}></i>
+                  <span className="nav-group-toggle-label">즐겨찾기</span>
+                </span>
+                <i className={`fas fa-chevron-${openGroups.has('즐겨찾기') ? 'up' : 'down'} nav-group-arrow`}></i>
+              </button>
+              <div className={`nav-group-items${openGroups.has('즐겨찾기') ? ' open' : ''}`}>
+                {favItems.map(item => renderItem(item))}
+              </div>
+            </div>
+          )}
+
           {nav.map(group => {
-            const visibleItems = group.items.filter(item => {
-              if (item.adminOnly && role !== 'admin') return false;
-              // teacher 역할 + 권한 레코드 있을 때만 제한 (null = 권한 미설정 = 허용)
-              if (item.permission && role === 'teacher' && teacherPermissions) {
-                return teacherPermissions[item.permission] !== false;
-              }
-              return true;
-            });
+            const visibleItems = group.items.filter(isVisible);
             if (!visibleItems.length) return null;
             const isOpen = openGroups.has(group.group);
             const hasActive = visibleItems.some(item =>
@@ -144,18 +220,7 @@ const Sidebar = memo(function Sidebar({ open, onClose, collapsed, onToggleCollap
 
                 {/* 아코디언 하위 메뉴 */}
                 <div className={`nav-group-items${isOpen ? ' open' : ''}`}>
-                  {visibleItems.map(item => (
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.to === '/' || item.to === '/my'}
-                      className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-                      onClick={onClose}
-                    >
-                      <i className={`fas ${item.icon}`}></i>
-                      <span>{item.label}</span>
-                    </NavLink>
-                  ))}
+                  {visibleItems.map(item => renderItem(item))}
                 </div>
               </div>
             );
