@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import ClassPickerModal from './ClassPickerModal.jsx';
 
 const GRADE_TABS = ['전체', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3'];
 
@@ -22,6 +23,7 @@ export default function StudentSelect({ students = [], value, onChange }) {
   const [query, setQuery]         = useState('');
   const [gradeTab, setGradeTab]   = useState('전체');
   const [classFilter, setClassFilter] = useState('전체');
+  const [showClassPicker, setShowClassPicker] = useState(false);
   const containerRef              = useRef(null);
   const inputRef                  = useRef(null);
 
@@ -187,29 +189,41 @@ export default function StudentSelect({ students = [], value, onChange }) {
             })}
           </div>
 
-          {/* 반 필터 */}
+          {/* 반 필터 (검색·학년·선생님 모달) */}
           {availableClasses.length > 0 && (
-            <div style={{ padding: '6px 12px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setClassFilter('전체')} style={{
-                padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                border: '1px solid ' + (classFilter === '전체' ? '#7209b7' : '#e2e8f0'),
-                background: classFilter === '전체' ? '#7209b7' : '#fff',
-                color: classFilter === '전체' ? '#fff' : '#64748b',
-              }}>전체</button>
-              {availableClasses.map(c => {
-                const active = classFilter === c;
-                const base = gradeTab === '전체' ? students : students.filter(s => normalizeGrade(s.grade) === gradeTab);
-                const count = base.filter(s => s.class_name === c).length;
-                return (
-                  <button key={c} type="button" onClick={() => setClassFilter(c)} style={{
-                    padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                    border: '1px solid ' + (active ? '#7209b7' : '#e2e8f0'),
-                    background: active ? '#7209b7' : '#fff',
-                    color: active ? '#fff' : '#64748b',
-                  }}>{c} <span style={{ fontWeight: 400 }}>{count}</span></button>
-                );
-              })}
+            <div style={{ padding: '7px 12px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button type="button" onClick={() => setShowClassPicker(true)} style={{
+                flex: 1, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                border: '1.5px solid ' + (classFilter !== '전체' ? '#7209b7' : '#e2e8f0'),
+                background: classFilter !== '전체' ? '#faf5ff' : '#fff',
+                color: classFilter !== '전체' ? '#7209b7' : '#64748b',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+              }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <i className="fas fa-filter" style={{ fontSize: 10, marginRight: 6 }} />
+                  {classFilter === '전체' ? '반으로 필터 (검색·선생님별)' : classFilter}
+                </span>
+                <i className="fas fa-chevron-down" style={{ fontSize: 10, color: '#94a3b8', flexShrink: 0 }} />
+              </button>
+              {classFilter !== '전체' && (
+                <button type="button" onClick={() => setClassFilter('전체')} title="필터 해제" style={{
+                  padding: '6px 9px', borderRadius: 8, fontSize: 11, border: '1.5px solid #e2e8f0', background: '#fff', color: '#94a3b8', cursor: 'pointer', flexShrink: 0,
+                }}><i className="fas fa-times" /></button>
+              )}
             </div>
+          )}
+
+          {showClassPicker && (
+            <ClassPickerModal
+              title="반 필터 선택"
+              zIndex={10000}
+              items={[...new Set(students.map(s => s.class_name).filter(Boolean))].map(c => ({ key: c, label: c, grade: c.split(/[-\s(]/)[0] }))}
+              currentKey={classFilter === '전체' ? null : classFilter}
+              allowAll
+              allLabel="전체 반 보기"
+              onPick={key => { setClassFilter(key ?? '전체'); setGradeTab('전체'); setShowClassPicker(false); }}
+              onClose={() => setShowClassPicker(false)}
+            />
           )}
 
           {/* 학생 목록 */}

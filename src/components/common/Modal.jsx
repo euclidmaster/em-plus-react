@@ -1,8 +1,8 @@
-export default function Modal({ title, onClose, children, width = 480 }) {
+export default function Modal({ title, onClose, children, width = 480, zIndex = 1000 }) {
   return (
     <div
       onClick={onClose}
-      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' }}
+      style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex, display:'flex', alignItems:'center', justifyContent:'center' }}
     >
       <div
         onClick={e => e.stopPropagation()}

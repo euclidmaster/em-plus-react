@@ -31,7 +31,7 @@ function gradeBucket(grade) {
  * items: [{ key, label, grade }]
  * onPick(key): key로 선택 (allowAll이면 '전체' 선택 시 null 전달)
  */
-export default function ClassPickerModal({ items, currentKey = null, onPick, onClose, title = '반 선택', allowAll = false, allLabel = '전체 보기' }) {
+export default function ClassPickerModal({ items, currentKey = null, onPick, onClose, title = '반 선택', allowAll = false, allLabel = '전체 보기', zIndex = 1000 }) {
   const [q, setQ] = useState('');
   const [teacherFilter, setTeacherFilter] = useState(null);
 
@@ -54,7 +54,7 @@ export default function ClassPickerModal({ items, currentKey = null, onPick, onC
   const totalShown = groups.reduce((n, [, l]) => n + l.length, 0);
 
   return (
-    <Modal title={title} onClose={onClose} width={560}>
+    <Modal title={title} onClose={onClose} width={560} zIndex={zIndex}>
       <div style={{ position: 'relative', marginBottom: 4 }}>
         <i className="fas fa-search" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', fontSize: 13 }} />
         <input
