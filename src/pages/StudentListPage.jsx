@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createStudent, getTeachers, addStudentTeacher } from '../lib/api.js';
+import { createStudent, getTeachers, addStudentTeacher, getAllStudentClasses } from '../lib/api.js';
 import { useToast } from '../components/common/Toast.jsx';
 import Modal from '../components/common/Modal.jsx';
 import { useStudentList } from '../hooks/useStudentList.js';
@@ -43,11 +43,28 @@ export default function StudentListPage() {
   const [showModal, setShowModal]     = useState(false);
   const [saving, setSaving]           = useState(false);
   const [form, setForm] = useState({ name:'', grade:'', class_name:'', school_name:'', phone:'', teacher_id:'', status:'재원중' });
+  const [classMap, setClassMap]       = useState({}); // student_id → [반 이름들] (student_classes)
   const showToast = useToast();
 
   useEffect(() => {
     getTeachers().then(setTeachers).catch(console.error);
+    getAllStudentClasses().then(rows => {
+      const m = {};
+      for (const r of rows) {
+        const nm = r.classes?.name;
+        if (nm) (m[r.student_id] ??= []).push(nm);
+      }
+      setClassMap(m);
+    }).catch(console.error);
   }, []);
+
+  // 학생의 모든 반 = students.class_name + student_classes 소속 (중복 제거)
+  function classesOf(s) {
+    const set = new Set();
+    if (s.class_name) set.add(s.class_name);
+    for (const nm of (classMap[s.id] ?? [])) set.add(nm);
+    return [...set];
+  }
 
   // 재원상태 필터를 먼저 적용한 베이스
   const statusBase = statusFilter === '전체'
@@ -62,23 +79,24 @@ export default function StudentListPage() {
     return acc;
   }, {});
 
-  // 선택된 학년 기준으로 반 목록 추출
+  // 선택된 학년 기준으로 반 목록 추출 (다중 반 포함)
   const availableClasses = (() => {
     const base = gradeFilter === '전체' ? statusBase : statusBase.filter(s => normalizeGrade(s.grade) === gradeFilter);
-    const classes = [...new Set(base.map(s => s.class_name).filter(Boolean))].sort();
-    return ['전체', ...classes];
+    const set = new Set();
+    base.forEach(s => classesOf(s).forEach(c => set.add(c)));
+    return ['전체', ...[...set].sort()];
   })();
 
   // 최종 필터링
   const filtered = statusBase.filter(s => {
     if (gradeFilter !== '전체' && normalizeGrade(s.grade) !== gradeFilter) return false;
-    if (classFilter !== '전체' && s.class_name !== classFilter) return false;
+    if (classFilter !== '전체' && !classesOf(s).includes(classFilter)) return false;
     if (debouncedQ) {
       const q = debouncedQ.toLowerCase();
       return (
         s.name.toLowerCase().includes(q) ||
         (s.school_name ?? '').toLowerCase().includes(q) ||
-        (s.class_name ?? '').toLowerCase().includes(q)
+        classesOf(s).join(' ').toLowerCase().includes(q)
       );
     }
     return true;
@@ -200,7 +218,7 @@ export default function StudentListPage() {
             {availableClasses.map(c => {
               const active = classFilter === c;
               const base = gradeFilter === '전체' ? statusBase : statusBase.filter(s => normalizeGrade(s.grade) === gradeFilter);
-              const count = c === '전체' ? base.length : base.filter(s => s.class_name === c).length;
+              const count = c === '전체' ? base.length : base.filter(s => classesOf(s).includes(c)).length;
               return (
                 <button key={c} onClick={() => setClassFilter(c)} style={{
                   padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -280,12 +298,19 @@ export default function StudentListPage() {
                     ) : '-'}
                   </td>
                   <td style={{ padding:'10px 14px', fontSize:13 }}>
-                    {s.class_name ? (
-                      <span style={{
-                        padding:'2px 8px', borderRadius:20, fontSize:12, fontWeight:600,
-                        background:'#f3e8ff', color:'#7209b7',
-                      }}>{s.class_name}</span>
-                    ) : '-'}
+                    {(() => {
+                      const cs = classesOf(s);
+                      return cs.length === 0 ? '-' : (
+                        <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                          {cs.map(c => (
+                            <span key={c} style={{
+                              padding:'2px 8px', borderRadius:20, fontSize:12, fontWeight:600,
+                              background:'#f3e8ff', color:'#7209b7',
+                            }}>{c}</span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ padding:'10px 14px', fontSize:13 }}>{s.school_name ?? '-'}</td>
                   <td style={{ padding:'10px 14px', fontSize:13 }}>{s.teachers?.name ?? '-'}</td>

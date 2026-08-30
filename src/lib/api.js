@@ -316,6 +316,14 @@ export async function getStudentClasses(studentId) {
   if (error) throw error;
   return data ?? [];
 }
+export async function getAllStudentClasses() {
+  // 전체 학생↔반 연결 (학생 명단에서 다중 반 표시용)
+  const { data, error } = await supabase
+    .from('student_classes')
+    .select('student_id, classes(name)');
+  if (error) throw error;
+  return data ?? [];
+}
 export async function getClassStudents(classId) {
   // 한 반에 속한 학생들
   const { data, error } = await supabase
@@ -339,29 +347,11 @@ export async function removeStudentFromClass(linkId) {
   if (error) throw error;
 }
 export async function setStudentClasses(studentId, classIds) {
-  // 학생의 반 소속을 주어진 classIds 집합으로 동기화 (다중 선택 UI 저장 시 사용)
-  // 기존: getStudentClasses → 추가/삭제 diff
-  const current = await getStudentClasses(studentId);
-  const currentIds = new Set(current.map(c => c.class_id));
-  const next = new Set(classIds);
-
-  const toAdd    = [...next].filter(id => !currentIds.has(id));
-  const toRemove = current.filter(c => !next.has(c.class_id));
-
-  // 추가를 먼저 수행: insert가 실패하면 아무것도 삭제하지 않고 throw하므로
-  // 기존 소속이 유실되는 partial-write를 방지한다. (add/remove 대상은 서로소라 중복 없음)
-  if (toAdd.length > 0) {
-    const rows = toAdd.map(class_id => ({ student_id: studentId, class_id }));
-    const { error } = await supabase.from('student_classes').insert(rows);
-    if (error) throw error;
-  }
-  if (toRemove.length > 0) {
-    const { error } = await supabase
-      .from('student_classes')
-      .delete()
-      .in('id', toRemove.map(r => r.id));
-    if (error) throw error;
-  }
+  const { error } = await supabase.rpc('set_student_classes_atomic', {
+    p_student_id: studentId,
+    p_class_ids: classIds,
+  });
+  if (error) throw error;
   return getStudentClasses(studentId);
 }
 
@@ -572,37 +562,21 @@ export async function getPerformances(studentId) {
 }
 export async function createPerformance(payload) {
   const { sessions, ...perfData } = payload;
-  const { data: perf, error } = await supabase.from('performances').insert(perfData).select().single();
+  const { data: perf, error } = await supabase.rpc('create_performance_atomic', {
+    p_performance: perfData,
+    p_sessions: sessions ?? [],
+  });
   if (error) throw error;
-  if (sessions?.length) {
-    const rows = sessions
-      .filter(s => s.eval_date || s.eval_types?.length || s.is_done)
-      .map(s => ({ performance_id: perf.id, session_no: s.session_no, eval_date: s.eval_date || null, eval_types: s.eval_types ?? [], is_done: s.is_done ?? false }));
-    if (rows.length) {
-      const { error: sErr } = await supabase.from('performance_sessions').insert(rows);
-      if (sErr) throw sErr;
-    }
-  }
   return perf;
 }
 export async function updatePerformance(id, payload) {
   const { sessions, performance_sessions, ...perfData } = payload;
-  const { data: perf, error } = await supabase.from('performances').update(perfData).eq('id', id).select().single();
+  const { data: perf, error } = await supabase.rpc('update_performance_atomic', {
+    p_performance_id: id,
+    p_performance: perfData,
+    p_sessions: sessions ?? performance_sessions ?? [],
+  });
   if (error) throw error;
-  // 세션 교체(delete→insert)는 트랜잭션이 아니므로 각 단계 오류를 반드시 표면화한다.
-  // 특히 insert 오류를 무시하면 기존 세션만 삭제된 채로 저장 성공처럼 보이는 partial-write가 발생한다.
-  const { error: delErr } = await supabase.from('performance_sessions').delete().eq('performance_id', id);
-  if (delErr) throw delErr;
-  const src = sessions ?? performance_sessions ?? [];
-  if (src.length) {
-    const rows = src
-      .filter(s => s.eval_date || s.eval_types?.length || s.is_done)
-      .map(s => ({ performance_id: id, session_no: s.session_no, eval_date: s.eval_date || null, eval_types: s.eval_types ?? [], is_done: s.is_done ?? false }));
-    if (rows.length) {
-      const { error: insErr } = await supabase.from('performance_sessions').insert(rows);
-      if (insErr) throw insErr;
-    }
-  }
   return perf;
 }
 export async function deletePerformance(id) {
@@ -859,88 +833,10 @@ export async function getPendingProfiles() {
   return data ?? [];
 }
 export async function approveProfile(id) {
-  // profiles + auth 메타데이터 조회
-  const { data: prof, error: fetchErr } = await supabase
-    .from('profiles').select('id, name, role').eq('id', id).single();
-  if (fetchErr) throw fetchErr;
-
-  const { error } = await supabase.from('profiles').update({ approved: true }).eq('id', id);
+  const { error } = await supabase.rpc('approve_profile_atomic', {
+    p_profile_id: id,
+  });
   if (error) throw error;
-
-  // 강사/조교 → teachers 테이블 자동 등록
-  if (prof.role === 'teacher' || prof.role === 'assistant') {
-    // 1) 이미 profile_id로 연결된 레코드 확인
-    const { data: existingByProfile } = await supabase
-      .from('teachers').select('id').eq('profile_id', id).maybeSingle();
-    if (!existingByProfile) {
-      // 2) 수동으로 만들어진 동명 레코드(profile_id null)가 있으면 profile_id만 업데이트
-      const { data: existingByName } = await supabase
-        .from('teachers').select('id').eq('name', prof.name).is('profile_id', null).maybeSingle();
-      if (existingByName) {
-        const { error: updateErr } = await supabase
-          .from('teachers').update({ profile_id: id, role: prof.role })
-          .eq('id', existingByName.id);
-        if (updateErr) throw new Error('teachers 연결 실패: ' + updateErr.message);
-      } else {
-        // 3) 없으면 새로 생성
-        const { error: insertErr } = await supabase.from('teachers').insert({
-          name: prof.name, role: prof.role, profile_id: id,
-        });
-        if (insertErr) throw new Error('teachers 등록 실패: ' + insertErr.message);
-      }
-    }
-  }
-
-  // 학생 → students 테이블 자동 등록 (profiles에 저장된 학생 정보 활용)
-  if (prof.role === 'student') {
-    // 1) 이미 profile_id로 연결된 학생이 있으면 종료
-    const { data: existingByProfile } = await supabase
-      .from('students').select('id').eq('profile_id', id).maybeSingle();
-    if (existingByProfile) return;
-
-    // 2) profiles에 저장된 학생 정보 조회
-    const { data: fullProf } = await supabase
-      .from('profiles')
-      .select('name, grade, class_name, school_name, phone')
-      .eq('id', id).single();
-
-    const name  = fullProf?.name ?? prof.name;
-    const grade = fullProf?.grade ?? null;
-
-    // 3) 이름+학년 기준 미연결 학생(수동 등록본) 검색 — 정확히 1명이면 연결
-    if (name) {
-      let matchQuery = supabase
-        .from('students')
-        .select('id')
-        .eq('name', name)
-        .is('profile_id', null);
-      if (grade) matchQuery = matchQuery.eq('grade', grade);
-      const { data: candidates } = await matchQuery;
-      if (candidates?.length === 1) {
-        const { error: linkErr } = await supabase
-          .from('students').update({ profile_id: id }).eq('id', candidates[0].id);
-        if (linkErr) throw new Error('students 연결 실패: ' + linkErr.message);
-        return;
-      }
-      // 2명 이상이면 모호 — 새로 등록하지 않고 운영자 수동 정리 권장 (중복 INSERT 방지)
-      if (candidates && candidates.length > 1) {
-        console.warn('[approveProfile] 동명 학생 다수 존재, 수동 연결 필요:', name, grade);
-        return;
-      }
-    }
-
-    // 4) 매칭되는 학생 없음 → 새로 INSERT
-    const { error: insertErr } = await supabase.from('students').insert({
-      name,
-      grade,
-      class_name:  fullProf?.class_name  ?? null,
-      school_name: fullProf?.school_name ?? null,
-      phone:       fullProf?.phone       ?? null,
-      profile_id:  id,
-      status:      '재원중',
-    });
-    if (insertErr) throw new Error('students 등록 실패: ' + insertErr.message);
-  }
 }
 export async function rejectProfile(id) {
   const { error } = await supabase.from('profiles').delete().eq('id', id);
@@ -1290,28 +1186,16 @@ export async function getClinicReportData(studentId, yearMonth) {
 //   - 지시내용: 항상 clinic_items
 //   - 결과: item 행 → clinic_items.result, reply 행 → clinic_replies.content
 export async function updateClinicReportRow(row, { instructions, result }) {
-  if (instructions !== undefined) {
-    const { error } = await supabase
-      .from('clinic_items')
-      .update({ instructions })
-      .eq('id', row.itemId);
-    if (error) throw error;
-  }
-  if (result !== undefined) {
-    if (row.kind === 'reply') {
-      const { error } = await supabase
-        .from('clinic_replies')
-        .update({ content: result })
-        .eq('id', row.replyId);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('clinic_items')
-        .update({ result })
-        .eq('id', row.itemId);
-      if (error) throw error;
-    }
-  }
+  const { error } = await supabase.rpc('update_clinic_report_row_atomic', {
+    p_item_id: row.itemId,
+    p_kind: row.kind,
+    p_reply_id: row.replyId,
+    p_update_instructions: instructions !== undefined,
+    p_instructions: instructions,
+    p_update_result: result !== undefined,
+    p_result: result,
+  });
+  if (error) throw error;
 }
 
 // 리포트에서만 숨김 (원본 클리닉 데이터는 보존)
