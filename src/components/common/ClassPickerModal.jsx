@@ -3,6 +3,13 @@ import Modal from './Modal.jsx';
 
 const GRADE_ORDER = ['초등', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '기타'];
 
+// 반 이름에서 선생님 라벨 추출: "학년-과목-선생님(요일)" → "선생님"
+function teacherOf(label) {
+  const noPar = (label || '').replace(/\(.*?\)/g, '').trim();
+  const parts = noPar.split('-');
+  return parts.length >= 3 ? parts[parts.length - 1].trim() : '';
+}
+
 // 반 이름/학년값을 학년 그룹으로 분류
 function gradeBucket(grade) {
   const g = (grade || '').replace(/\s/g, '');
@@ -26,14 +33,23 @@ function gradeBucket(grade) {
  */
 export default function ClassPickerModal({ items, currentKey = null, onPick, onClose, title = '반 선택', allowAll = false, allLabel = '전체 보기' }) {
   const [q, setQ] = useState('');
+  const [teacherFilter, setTeacherFilter] = useState(null);
+
+  const teacherList = useMemo(() => {
+    const set = new Set();
+    items.forEach(it => { const t = teacherOf(it.label); if (t) set.add(t); });
+    return [...set].sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [items]);
 
   const groups = useMemo(() => {
     const query = q.trim().toLowerCase();
-    const filtered = query ? items.filter(it => it.label.toLowerCase().includes(query)) : items;
+    let filtered = items;
+    if (query) filtered = filtered.filter(it => it.label.toLowerCase().includes(query));
+    if (teacherFilter) filtered = filtered.filter(it => teacherOf(it.label) === teacherFilter);
     const m = {};
     filtered.forEach(it => { const b = gradeBucket(it.grade); (m[b] ??= []).push(it); });
     return GRADE_ORDER.filter(g => m[g]).map(g => [g, m[g].sort((a, b) => a.label.localeCompare(b.label, 'ko'))]);
-  }, [items, q]);
+  }, [items, q, teacherFilter]);
 
   const totalShown = groups.reduce((n, [, l]) => n + l.length, 0);
 
@@ -50,7 +66,20 @@ export default function ClassPickerModal({ items, currentKey = null, onPick, onC
         />
       </div>
 
-      <div style={{ maxHeight: '55vh', overflowY: 'auto', marginTop: 10 }}>
+      {teacherList.length > 1 && (
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 10 }}>
+          <button onClick={() => setTeacherFilter(null)} style={teacherChip(teacherFilter == null)}>
+            <i className="fas fa-user-friends" style={{ fontSize: 10, marginRight: 4 }} />전체 선생님
+          </button>
+          {teacherList.map(t => (
+            <button key={t} onClick={() => setTeacherFilter(teacherFilter === t ? null : t)} style={teacherChip(teacherFilter === t)}>
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div style={{ maxHeight: '48vh', overflowY: 'auto', marginTop: 10 }}>
         {allowAll && !q.trim() && (
           <button onClick={() => onPick(null)} style={pickBtn(currentKey == null)}>
             <i className="fas fa-list" style={{ marginRight: 6, fontSize: 11 }} />{allLabel}
@@ -78,6 +107,15 @@ export default function ClassPickerModal({ items, currentKey = null, onPick, onC
       </div>
     </Modal>
   );
+}
+
+function teacherChip(active) {
+  return {
+    padding: '5px 11px', borderRadius: 20, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    border: '1.5px solid ' + (active ? '#4361ee' : '#e2e8f0'),
+    background: active ? '#4361ee' : '#f8fafc',
+    color: active ? '#fff' : '#64748b',
+  };
 }
 
 function pickBtn(active) {
