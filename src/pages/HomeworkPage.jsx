@@ -59,7 +59,7 @@ function IndividualHomework({ showToast, students }) {
   }
 
   useEffect(() => {
-    if (students.length && selectedId === null) { setSelectedId(students[0].id); loadHw(students[0].id); } // eslint-disable-line react-hooks/set-state-in-effect
+    if (students.length && selectedId === null) { setSelectedId(students[0].id); loadHw(students[0].id); }
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggle(id, isDone) {
@@ -164,7 +164,6 @@ function ClassHomework({ showToast, students: allStudents }) {
 
   // 학년+반 선택 시 학생 목록 갱신
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!gradeFilter && !classFilter) { setClassStudents([]); return; }
     const base = allStudents.filter(s => s.status === '재원중');
     const filtered = base.filter(s => {

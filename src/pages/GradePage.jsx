@@ -23,7 +23,7 @@ export default function GradePage() {
   const showToast = useToast();
 
   useEffect(() => {
-    if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
+    if (students.length && selectedId === null) setSelectedId(students[0].id);
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 학생/시험 탭을 빠르게 전환할 때 늦게 온 이전 응답이 최신 탭을 덮어쓰지 않도록 가드
@@ -38,7 +38,7 @@ export default function GradePage() {
   }
 
   useEffect(() => {
-    if (selectedId) loadGrades(); // eslint-disable-line react-hooks/set-state-in-effect
+    if (selectedId) loadGrades();
   }, [selectedId, examType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateRow(idx, key, val) {

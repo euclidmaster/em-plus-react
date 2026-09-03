@@ -46,9 +46,9 @@ export default function PerformancePage() {
     try { setPerfs(await getPerformances(id ?? selectedId)); } catch { /* ignore */ }
   }
 
-  useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => { loadAll(); }, []);
   useEffect(() => {
-    if (students.length && selectedId === null) { setSelectedId(students[0].id); loadOne(students[0].id); } // eslint-disable-line react-hooks/set-state-in-effect
+    if (students.length && selectedId === null) { setSelectedId(students[0].id); loadOne(students[0].id); }
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openAdd() { setForm(EMPTY_FORM); setModal('add'); }

@@ -15,6 +15,7 @@ export default function StudentChatPage() {
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText]   = useState('');
   const bottomRef               = useRef(null);
+  const loadRequestRef          = useRef(0);
   const showToast = useToast();
   const { canModify, handleEdit, handleDelete } = useMessageActions(setMessages);
 
@@ -41,7 +42,11 @@ export default function StudentChatPage() {
 
   async function load() {
     if (!profile?.id || !teacher?.profile_id) return;
-    try { setMessages(await getMessagesBetween(profile.id, teacher.profile_id)); }
+    const requestId = ++loadRequestRef.current;
+    try {
+      const nextMessages = await getMessagesBetween(profile.id, teacher.profile_id);
+      if (requestId === loadRequestRef.current) setMessages(nextMessages);
+    }
     catch { /* 무시 */ }
   }
 
@@ -67,6 +72,7 @@ export default function StudentChatPage() {
     startPolling();
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
+      loadRequestRef.current += 1;
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibility);
     };

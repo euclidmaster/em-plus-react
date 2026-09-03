@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { getTeacherByProfileId, getTeacherPermissionById } from '../lib/api.js';
 
@@ -9,9 +9,17 @@ export function AuthProvider({ children }) {
   const [profile, setProfile]               = useState(null);
   const [loading, setLoading]               = useState(true);
   const [teacherPermissions, setTeacherPermissions] = useState(null);
+  const authRequestRef = useRef(0);
 
-  async function loadProfile(u) {
-    if (!u) { setProfile(null); return; }
+  async function loadProfile(u, requestId) {
+    const isCurrent = () => requestId === authRequestRef.current;
+    if (!u) {
+      if (isCurrent()) {
+        setProfile(null);
+        setTeacherPermissions(null);
+      }
+      return;
+    }
 
     const meta     = u.user_metadata ?? {};
     const metaRole = meta.role;           // 회원가입 때 선택한 역할 (없으면 undefined)
@@ -63,18 +71,22 @@ export function AuthProvider({ children }) {
       prof = fallback;
     }
 
+    if (!isCurrent()) return;
     setProfile(prof);
 
     // teacher 역할이면 열람 권한 로드
     if (prof.role === 'teacher') {
+      setTeacherPermissions(null);
       try {
         const teacher = await getTeacherByProfileId(prof.id);
         if (teacher) {
           const perms = await getTeacherPermissionById(teacher.id);
-          setTeacherPermissions(perms); // null = 권한 레코드 없음 (기본 허용)
+          if (isCurrent()) setTeacherPermissions(perms); // null = 권한 레코드 없음 (기본 허용)
+        } else if (isCurrent()) {
+          setTeacherPermissions(null);
         }
       } catch { /* 권한 로드 실패 시 기본 허용 */ }
-    } else {
+    } else if (isCurrent()) {
       setTeacherPermissions(null);
     }
 
@@ -98,17 +110,29 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    const initialRequestId = ++authRequestRef.current;
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (initialRequestId !== authRequestRef.current) return;
       setUser(session?.user ?? null);
-      loadProfile(session?.user ?? null).finally(() => setLoading(false));
+      loadProfile(session?.user ?? null, initialRequestId)
+        .finally(() => {
+          if (initialRequestId === authRequestRef.current) setLoading(false);
+        });
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const requestId = ++authRequestRef.current;
       setUser(session?.user ?? null);
-      loadProfile(session?.user ?? null);
+      loadProfile(session?.user ?? null, requestId)
+        .finally(() => {
+          if (requestId === authRequestRef.current) setLoading(false);
+        });
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      authRequestRef.current += 1;
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function signIn(email, password) {

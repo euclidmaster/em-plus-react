@@ -21,7 +21,7 @@ export default function DailyRecordPage() {
   const showToast = useToast();
 
   useEffect(() => {
-    if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
+    if (students.length && selectedId === null) setSelectedId(students[0].id);
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 학생/날짜를 빠르게 바꿀 때 늦게 도착한 이전 요청이 최신 목록을 덮어쓰지 않도록 가드
@@ -36,7 +36,7 @@ export default function DailyRecordPage() {
     catch { if (reqId === loadReqRef.current) showToast('기록 로드 실패', 'error'); }
   }
 
-  useEffect(() => { if (selectedId) load(); }, [selectedId, date]); // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { if (selectedId) load(); }, [selectedId, date]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addDraft() {
     setDrafts(prev => [...prev, { _cid: Date.now() + Math.random(), subject:'국어', material:'', study_range:'', study_minutes:'' }]);

@@ -48,7 +48,7 @@ export default function TeacherPage() {
   }
 
   useEffect(() => {
-    load(); // eslint-disable-line react-hooks/set-state-in-effect
+    load();
     if (profile?.id) getMessages(profile.id).then(setMessages).catch(console.error);
   }, [profile]); // eslint-disable-line react-hooks/exhaustive-deps
 

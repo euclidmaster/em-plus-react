@@ -47,7 +47,7 @@ export default function StudentPerformancePage() {
   }
 
   useEffect(() => {
-    if (student) load(); // eslint-disable-line react-hooks/set-state-in-effect
+    if (student) load();
   }, [student]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openAdd() { setForm(EMPTY_FORM); setModal('add'); }

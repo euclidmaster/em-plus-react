@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { getStudents, getTeacherByProfileId, getTeacherByName, linkTeacherProfile, getStudentsForTeacher } from '../lib/api.js';
 
@@ -14,9 +14,12 @@ export function useStudentList() {
   const { profile } = useAuth();
   const [students, setStudents] = useState([]);
   const [loading, setLoading]   = useState(true);
+  const requestRef = useRef(0);
 
   const fetch = useCallback(async () => {
     if (!profile) return;
+    const requestId = ++requestRef.current;
+    const isCurrent = () => requestId === requestRef.current;
     setLoading(true);
     try {
       if (profile.role === 'teacher') {
@@ -38,7 +41,8 @@ export function useStudentList() {
 
         if (teacherMap.size === 0) {
           // 교사 레코드를 찾지 못한 경우 전체 학생 목록으로 폴백
-          setStudents(await getStudents());
+          const fallback = await getStudents();
+          if (isCurrent()) setStudents(fallback);
           return;
         }
 
@@ -57,22 +61,27 @@ export function useStudentList() {
 
         if (merged.length === 0) {
           // RLS 문제이거나 담당 학생 미배정인 경우 전체 학생 목록으로 폴백
-          setStudents(await getStudents());
-        } else {
+          const fallback = await getStudents();
+          if (isCurrent()) setStudents(fallback);
+        } else if (isCurrent()) {
           setStudents(merged);
         }
       } else {
-        setStudents(await getStudents());
+        const allStudents = await getStudents();
+        if (isCurrent()) setStudents(allStudents);
       }
     } catch (e) {
       console.error('[StudentList] fetch error:', e);
-      setStudents([]);
+      if (isCurrent()) setStudents([]);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [profile]);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => {
+    fetch();
+    return () => { requestRef.current += 1; };
+  }, [fetch]);
 
   return { students, loading, refresh: fetch };
 }

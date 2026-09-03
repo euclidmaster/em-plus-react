@@ -18,7 +18,7 @@ export default function WeeklyPlanPage() {
   const showToast = useToast();
 
   useEffect(() => {
-    if (students.length && selectedId === null) setSelectedId(students[0].id); // eslint-disable-line react-hooks/set-state-in-effect
+    if (students.length && selectedId === null) setSelectedId(students[0].id);
   }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 학생/주차를 빠르게 바꿀 때 늦게 온 이전 응답이 최신 화면을 덮어쓰지 않도록 가드
@@ -33,7 +33,7 @@ export default function WeeklyPlanPage() {
   }
 
   useEffect(() => {
-    if (selectedId) load(); // eslint-disable-line react-hooks/set-state-in-effect
+    if (selectedId) load();
   }, [selectedId, weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addPlan() {
